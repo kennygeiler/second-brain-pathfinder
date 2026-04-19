@@ -1,5 +1,8 @@
-PYTHON ?= python
-UVICORN ?= uvicorn
+# Prefer a local/tmp venv if one exists, otherwise fall back to system python3.
+# Override with `PYTHON=/path/to/python make run` if you want a specific interpreter.
+VENV_PY := $(firstword $(wildcard .venv/bin/python /tmp/pathfinder-venv/bin/python))
+PYTHON ?= $(if $(VENV_PY),$(VENV_PY),python3)
+UVICORN ?= $(PYTHON) -m uvicorn
 
 .PHONY: install install-dev test run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
 
@@ -34,6 +37,7 @@ neo4j-down:
 	docker compose down
 
 run:
+	@echo "Starting API with $(PYTHON)"
 	$(UVICORN) services.api.main:app --reload --host 0.0.0.0 --port 8000
 
 demo:
