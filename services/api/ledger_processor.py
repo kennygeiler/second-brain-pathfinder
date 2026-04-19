@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -17,10 +17,10 @@ router = APIRouter(prefix="/ledger", tags=["ledger"])
 
 class LedgerPayload(BaseModel):
     transcription: str = Field(min_length=1)
-    source_id: str | None = None
+    source_id: Optional[str] = None
     source_type: str = Field(default="voice_ledger")
-    timestamp: str | None = None
-    meeting_id: str | None = None
+    timestamp: Optional[str] = None
+    meeting_id: Optional[str] = None
 
 
 class LedgerResponse(BaseModel):
@@ -51,7 +51,7 @@ def process_transcription(payload: LedgerPayload) -> LedgerResponse:
 
     for entity in extraction.entities:
         existing = vault.find_by_name(entity.name)
-        previous_sentiment = None
+        previous_sentiment: Optional[float] = None
         if existing is not None:
             previous_sentiment = existing.data.get("sentiment_vector")
             note = vault.update_note_from_extraction(

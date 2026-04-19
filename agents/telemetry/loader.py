@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -99,7 +99,7 @@ def commit_to_neo4j(proposal: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
-def run(fixture_path: Path | None = None, commit: bool = False) -> dict[str, Any]:
+def run(fixture_path: Optional[Path] = None, commit: bool = False) -> dict[str, Any]:
     path = fixture_path or (Path(__file__).parent / "systems.yaml")
     fixture = load_fixture(path)
     proposal = build_telemetry_proposal(fixture)

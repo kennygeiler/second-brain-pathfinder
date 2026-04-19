@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from . import vault
 from .config import settings
@@ -148,7 +148,7 @@ def apply_to_neo4j(
     return counts
 
 
-def sync(auto_commit: bool | None = None) -> dict[str, Any]:
+def sync(auto_commit: Optional[bool] = None) -> dict[str, Any]:
     commit = settings.auto_commit if auto_commit is None else auto_commit
     nodes, edges = build_proposals()
     proposed_path = write_proposed_queue(nodes, edges)

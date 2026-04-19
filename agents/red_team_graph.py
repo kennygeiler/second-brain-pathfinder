@@ -5,7 +5,7 @@ import argparse
 import json
 from datetime import date
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 from services.api import vault
 from services.api.config import settings
@@ -125,7 +125,7 @@ def _heuristic_narrative(hotspot: dict[str, Any]) -> str:
     )
 
 
-def _llm_narrative(hotspots: list[dict[str, Any]]) -> str | None:
+def _llm_narrative(hotspots: list[dict[str, Any]]) -> Optional[str]:
     if not settings.openai_api_key or not hotspots:
         return None
     try:
@@ -227,12 +227,12 @@ def build_graph():
         graph.add_edge("write", END)
         compiled = graph.compile()
 
-        def run(initial: AgentState | None = None) -> AgentState:
+        def run(initial: Optional[AgentState] = None) -> AgentState:
             return compiled.invoke(initial or {})
 
         return run
     except Exception:
-        def run(initial: AgentState | None = None) -> AgentState:
+        def run(initial: Optional[AgentState] = None) -> AgentState:
             state: AgentState = initial or {}
             state = node_query(state)
             state = node_red_team(state)
@@ -242,7 +242,7 @@ def build_graph():
         return run
 
 
-def run_red_team(initial: AgentState | None = None) -> AgentState:
+def run_red_team(initial: Optional[AgentState] = None) -> AgentState:
     return build_graph()(initial)
 
 

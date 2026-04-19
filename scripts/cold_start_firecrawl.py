@@ -6,6 +6,7 @@ import json
 import sys
 import uuid
 from pathlib import Path
+from typing import Optional
 
 import httpx
 
@@ -40,7 +41,7 @@ def _urls_from_env() -> list[str]:
     return [u.strip() for u in raw.split(",") if u.strip()]
 
 
-def run(urls: list[str] | None = None) -> dict[str, object]:
+def run(urls: Optional[list[str]] = None) -> dict[str, object]:
     targets = urls or _urls_from_env()
     if not targets:
         raise RuntimeError(

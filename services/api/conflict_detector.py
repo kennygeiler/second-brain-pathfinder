@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from . import vault
 from .config import settings
@@ -34,7 +34,7 @@ def check_conflict(
     previous_sentiment: float,
     new_sentiment: float,
     context: str = "",
-) -> Path | None:
+) -> Optional[Path]:
     delta = new_sentiment - previous_sentiment
     if abs(delta) <= CONFLICT_DELTA_THRESHOLD:
         return None

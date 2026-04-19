@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 from services.api import vault
 from services.api.config import settings
@@ -64,7 +64,7 @@ def write_ghost_note(
     *,
     source_type: str,
     source_id: str,
-) -> vault.StakeholderNote | None:
+) -> Optional[vault.StakeholderNote]:
     name = (influencer.get("name") or "").strip()
     if not name:
         return None

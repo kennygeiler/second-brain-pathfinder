@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import frontmatter
 from fastapi import FastAPI, HTTPException, Query
@@ -148,7 +148,7 @@ def graph_snapshot(limit: int = Query(default=200, ge=1, le=2000)) -> dict[str, 
 
 def _proposed_snapshot(limit: int) -> dict[str, Any]:
     proposed_dir = settings.vault / "proposed"
-    latest: Path | None = None
+    latest: Optional[Path] = None
     if proposed_dir.exists():
         files = sorted(proposed_dir.glob("sync-*.json"), reverse=True)
         latest = files[0] if files else None

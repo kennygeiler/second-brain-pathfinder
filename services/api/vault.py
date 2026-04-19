@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 import frontmatter
 
@@ -74,7 +74,7 @@ def iter_stakeholder_notes(include_conflicts: bool = False) -> Iterable[Stakehol
         yield StakeholderNote(path=md, post=post)
 
 
-def find_by_name(name: str) -> StakeholderNote | None:
+def find_by_name(name: str) -> Optional[StakeholderNote]:
     target = name.strip().lower()
     for note in iter_stakeholder_notes(include_conflicts=False):
         if str(note.data.get("name", "")).strip().lower() == target:
@@ -84,7 +84,7 @@ def find_by_name(name: str) -> StakeholderNote | None:
     return None
 
 
-def find_by_id(entity_id: str) -> StakeholderNote | None:
+def find_by_id(entity_id: str) -> Optional[StakeholderNote]:
     for note in iter_stakeholder_notes(include_conflicts=True):
         if note.id == entity_id:
             return note
@@ -131,10 +131,10 @@ def create_stakeholder_note(
 def update_note_from_extraction(
     note: StakeholderNote,
     *,
-    entity_type: str | None,
-    sentiment: float | None,
+    entity_type: Optional[str],
+    sentiment: Optional[float],
     confidence: float,
-    technical_blockers: list[str] | None,
+    technical_blockers: Optional[list[str]],
     source_lineage_entry: dict[str, Any],
 ) -> StakeholderNote:
     data = note.data

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,8 +25,8 @@ EXTRACTION_SYSTEM = (
 class ExtractedEntity(BaseModel):
     name: str
     type: str = "Person"
-    role: str | None = None
-    agency: str | None = None
+    role: Optional[str] = None
+    agency: Optional[str] = None
     blockers: list[str] = Field(default_factory=list)
     sentiment: float = 0.5
 
@@ -105,7 +105,7 @@ def _heuristic_extract(text: str) -> ExtractionResult:
     )
 
 
-def _llm_extract(text: str) -> ExtractionResult | None:
+def _llm_extract(text: str) -> Optional[ExtractionResult]:
     if not settings.openai_api_key:
         return None
     try:
