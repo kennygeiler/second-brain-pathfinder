@@ -3,8 +3,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-neo4j/data/
-neo4j/logs/
+neo4j/
 *.log
 node_modules/
 dashboard/dist/
