@@ -1,11 +1,13 @@
 PYTHON ?= python
 UVICORN ?= uvicorn
 
-.PHONY: install run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
+.PHONY: install install-dev test run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
 
 help:
 	@echo "Targets:"
 	@echo "  install       pip install requirements.txt"
+	@echo "  install-dev   pip install requirements-dev.txt (adds pytest)"
+	@echo "  test          run pytest smoke suite"
 	@echo "  neo4j-up      docker compose up -d neo4j"
 	@echo "  neo4j-down    docker compose down"
 	@echo "  run           run FastAPI on :8000"
@@ -18,6 +20,12 @@ help:
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
+
+install-dev:
+	$(PYTHON) -m pip install -r requirements-dev.txt
+
+test:
+	$(PYTHON) -m pytest -v
 
 neo4j-up:
 	docker compose up -d neo4j

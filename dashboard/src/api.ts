@@ -17,6 +17,29 @@ export type Conflict = {
 
 export type ActionPlan = Conflict;
 
+export type SourceLineage = {
+  type?: string;
+  id?: string;
+  timestamp?: string;
+  note?: string;
+};
+
+export type StakeholderDetail = {
+  id: string;
+  name: string;
+  metadata: Record<string, unknown> & {
+    type?: string;
+    influence_score?: number;
+    sentiment_vector?: number;
+    confidence_score?: number;
+    technical_blockers?: string[];
+    source_lineage?: SourceLineage[];
+    last_updated?: string;
+    ghost?: boolean;
+  };
+  content: string;
+};
+
 export type GraphSnapshot = {
   source: string;
   nodes: Array<Record<string, unknown>>;
@@ -36,9 +59,7 @@ async function getJson<T>(path: string): Promise<T> {
 export const api = {
   stakeholders: () => getJson<Stakeholder[]>("/stakeholders"),
   stakeholder: (id: string) =>
-    getJson<{ id: string; name: string; metadata: Record<string, unknown>; content: string }>(
-      `/stakeholders/${encodeURIComponent(id)}`,
-    ),
+    getJson<StakeholderDetail>(`/stakeholders/${encodeURIComponent(id)}`),
   conflicts: () => getJson<Conflict[]>("/conflicts"),
   actionPlans: () => getJson<ActionPlan[]>("/action-plans"),
   graph: () => getJson<GraphSnapshot>("/graph"),
