@@ -43,6 +43,20 @@ C_RESET="\033[0m"
 
 info() { printf "${C_INFO}[dev]${C_RESET} %s\n" "$*"; }
 
+# Kill anything listening on the given port (stale uvicorn / vite from a prior run).
+free_port() {
+  local port="$1" name="$2"
+  local pids
+  pids=$(lsof -ti:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [[ -n "$pids" ]]; then
+    info "port :$port busy — killing stale $name (pid $pids)"
+    kill $pids 2>/dev/null || true
+    sleep 0.3
+    pids=$(lsof -ti:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    [[ -n "$pids" ]] && kill -KILL $pids 2>/dev/null || true
+  fi
+}
+
 # ─── Recursive cleanup of all spawned processes ───────────────────────────────
 API_PID=""
 WEB_PID=""
@@ -70,6 +84,10 @@ cleanup() {
   printf "${C_INFO}[dev]${C_RESET} stopped.\n"
 }
 trap cleanup EXIT INT TERM
+
+# ─── Free stale ports so we always land on :8000 / :5173 ─────────────────────
+free_port 8000 "API"
+free_port 5173 "Vite"
 
 # ─── Neo4j (optional, non-blocking) ───────────────────────────────────────────
 if [[ "${SKIP_NEO4J:-}" != "1" ]]; then
@@ -108,7 +126,7 @@ fi
 if [[ "${SKIP_DASHBOARD:-}" != "1" ]]; then
   info "starting dashboard on :5173"
   (
-    cd dashboard && npm run dev 2>&1
+    cd dashboard && npm run dev -- --strictPort --port 5173 2>&1
   ) | awk -v c="$C_WEB" -v r="$C_RESET" '{ printf "%s[web]%s   %s\n", c, r, $0; fflush(); }' &
   WEB_PID=$!
 fi
