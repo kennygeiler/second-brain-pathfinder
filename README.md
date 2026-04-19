@@ -24,15 +24,24 @@ pathfinder-core/
 
 ## Quickstart
 
+One-time setup:
+
 ```bash
 cp .env.example .env
-docker compose up -d neo4j
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn services.api.main:app --reload
+(cd dashboard && npm install)
 ```
 
-Then run the showstopper demo:
+Then, to run everything (Neo4j + API + dashboard) in a **single terminal**:
+
+```bash
+make dev
+```
+
+Logs are prefixed `[neo4j]`, `[api]`, `[web]` so you can tell them apart. Ctrl-C once kills all of it. Docker Desktop needs to be running; if it isn't, `make dev` still starts the API and dashboard and the API falls back to the `vault/proposed/` JSON snapshot for the graph.
+
+Then run the showstopper demo (in a second terminal, or after stopping `make dev`):
 
 ```bash
 make demo

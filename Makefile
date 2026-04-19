@@ -4,22 +4,26 @@ VENV_PY := $(firstword $(wildcard .venv/bin/python /tmp/pathfinder-venv/bin/pyth
 PYTHON ?= $(if $(VENV_PY),$(VENV_PY),python3)
 UVICORN ?= $(PYTHON) -m uvicorn
 
-.PHONY: install install-dev test run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
+.PHONY: dev install install-dev test run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
 
 help:
 	@echo "Targets:"
+	@echo "  dev           start Neo4j + API + dashboard in ONE terminal (Ctrl-C kills all)"
 	@echo "  install       pip install requirements.txt"
 	@echo "  install-dev   pip install requirements-dev.txt (adds pytest)"
 	@echo "  test          run pytest smoke suite"
 	@echo "  neo4j-up      docker compose up -d neo4j"
 	@echo "  neo4j-down    docker compose down"
-	@echo "  run           run FastAPI on :8000"
+	@echo "  run           run FastAPI on :8000 (only — prefer 'make dev')"
 	@echo "  demo          run end-to-end pipeline (proposed-only)"
 	@echo "  demo-commit   run end-to-end pipeline and commit to Neo4j"
 	@echo "  sync          vault -> Neo4j proposals"
 	@echo "  red-team      run Red Team LangGraph"
-	@echo "  dashboard     npm install + npm run dev in dashboard/"
+	@echo "  dashboard     npm install + npm run dev in dashboard/ (only)"
 	@echo "  clean-vault   wipe vault contents (templates kept)"
+
+dev:
+	@PYTHON="$(PYTHON)" bash scripts/dev.sh
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
