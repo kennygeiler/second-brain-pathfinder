@@ -146,8 +146,28 @@ export function App() {
             </div>
           </div>
         )}
-        {tab === "intel" && <CityIntelligenceMap />}
-        {tab === "nav"   && <CityNavigationMap />}
+        {tab === "intel" && (
+          <CityIntelligenceMap
+            graph={graph}
+            conflicts={conflicts}
+            selectedId={selectedId}
+            onNodeClick={(id) => {
+              setSelectedId(id);
+              setTab("audit");
+            }}
+          />
+        )}
+        {tab === "nav" && (
+          <CityNavigationMap
+            graph={graph}
+            plans={plans}
+            selectedId={selectedId}
+            onNodeClick={(id) => {
+              setSelectedId(id);
+              setTab("audit");
+            }}
+          />
+        )}
       </div>
     </div>
   );

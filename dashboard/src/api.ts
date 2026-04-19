@@ -40,10 +40,27 @@ export type StakeholderDetail = {
   content: string;
 };
 
+export type GraphNode = {
+  id: string;
+  name?: string;
+  type?: string;
+  influence?: number;
+  sentiment?: number;
+  [key: string]: unknown;
+};
+
+export type GraphEdge = {
+  source: string;
+  target: string;
+  type: string;
+  weight?: number;
+  [key: string]: unknown;
+};
+
 export type GraphSnapshot = {
   source: string;
-  nodes: Array<Record<string, unknown>>;
-  edges: Array<{ source: string; target: string; type: string }>;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 };
 
 const BASE = "/api";
