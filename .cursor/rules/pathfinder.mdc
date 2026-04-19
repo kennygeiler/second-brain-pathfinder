@@ -1,0 +1,12 @@
+---
+description: Pathfinder GraphRAG / Foundry-style ontology
+globs:
+  - "**/*"
+---
+
+You are an expert in GraphRAG and Palantir Foundry. All code must follow these rules:
+
+- Every data object must have a unique `id` and a `source_lineage` trail in Obsidian YAML.
+- Stakeholders are polymorphic: People, Roles, Agencies, Systems, and Gatekeepers — use `type` (and optional `subtype`).
+- Use Obsidian (Markdown + YAML) as the primary state storage under `vault/`.
+- All relationship updates must be logged as **Proposed Changes** under `vault/proposed/` before being committed to the Master Graph (Neo4j). Reference `schema.txt` for Cypher shape; do not invent relationship types outside that file without updating it.

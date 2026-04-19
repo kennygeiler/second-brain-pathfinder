@@ -1,0 +1,21 @@
+# Canonical Obsidian frontmatter for Pathfinder GraphRAG
+# All stakeholder notes MUST include these keys (defaults allowed where noted).
+
+required_keys:
+  id: "UUID string, stable primary key"
+  type: "Person | Role | Agency | System | Gatekeeper"
+  influence_score: "float 0.0 - 1.0"
+  sentiment_vector: "float 0.0 - 1.0 (scalar sentiment projection)"
+  technical_blockers: "list of strings"
+  source_lineage:
+    - type: "voice_ledger | email | public_record | crawl | pdf_import"
+      id: "source identifier"
+      timestamp: "ISO-8601 datetime"
+  last_reconciled: "ISO-8601 datetime"
+
+optional_keys:
+  name: "display name"
+  confidence_score: "float 0-1 from last extraction"
+  last_updated: "ISO-8601 from last ledger write"
+  subtype: "e.g. Gatekeeper under Person"
+  ghost: "boolean — cold-start placeholder without full verification"

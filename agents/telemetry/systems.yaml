@@ -1,0 +1,20 @@
+# Seed telemetry: tie stakeholders to systems and log usage scores.
+# Stakeholder entries reference either id (uuid) or name (resolved at load time).
+systems:
+  - id: "sys-cyvl-dashboard"
+    name: "Cyvl Dashboard"
+  - id: "sys-asset-inventory"
+    name: "Asset Inventory Service"
+  - id: "sys-routing-engine"
+    name: "Routing Engine"
+
+uses:
+  - stakeholder_name: "Jane Commissioner"
+    system_id: "sys-cyvl-dashboard"
+    telemetry_score: 0.05
+  - stakeholder_name: "Jane Commissioner"
+    system_id: "sys-asset-inventory"
+    telemetry_score: 0.1
+  - stakeholder_name: "Mark Engineer"
+    system_id: "sys-routing-engine"
+    telemetry_score: 0.85

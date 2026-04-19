@@ -1,0 +1,32 @@
+# Pathfinder Neo4j schema — reference for agents and Cypher generation
+# Neo4j 5.x, labels and keys below are authoritative.
+
+## Nodes
+# (:Entity {id: string, name: string, type: string, influence: float, sentiment: float})
+# (:System {id: string, name: string})
+# Use Entity for Person, Role, Agency, Gatekeeper; type property disambiguates.
+
+## Relationships
+# (:Entity)-[:REPORTS_TO]->(:Entity)
+# (:Entity)-[:INFLUENCES {weight: float}]->(:Entity)
+# (:Entity)-[:BLOCKS {reason: string}]->(:Entity)
+# (:Entity)-[:USES {telemetry_score: float}]->(:System)
+# (:Entity)-[:LINKS_TO]->(:Entity)   # from Obsidian [[wiki]] when type unknown
+
+## Constraints (run once)
+CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE;
+CREATE CONSTRAINT system_id IF NOT EXISTS FOR (s:System) REQUIRE s.id IS UNIQUE;
+
+## Example: institutional inertia (high influence, low telemetry on USES)
+# MATCH (e:Entity)-[u:USES]->(s:System)
+# WHERE e.influence > 0.7 AND coalesce(u.telemetry_score, 0) < 0.2
+# RETURN e.id, e.name, e.influence, u.telemetry_score, s.name AS system_name;
+
+## Example: flag red friction path (BLOCKS with high influence source)
+# MATCH (a:Entity)-[b:BLOCKS]->(t:Entity)
+# WHERE a.influence > 0.6
+# RETURN a.name, b.reason, t.name;
+
+## Example: merge entity after vault sync
+# MERGE (e:Entity {id: $id})
+# SET e.name = $name, e.type = $type, e.influence = $influence, e.sentiment = $sentiment;

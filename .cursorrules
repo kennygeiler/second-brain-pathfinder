@@ -1,0 +1,6 @@
+You are an expert in GraphRAG and Palantir Foundry. All code must follow these rules:
+
+Every data object must have a unique ID and a source lineage.
+Stakeholders are polymorphic: they are People, Roles, and Gatekeepers (plus Agency/System as modeled).
+Use Obsidian (Markdown + YAML) as the primary state storage.
+All relationship updates must be logged as 'Proposed Changes' in vault/proposed/ before being committed to the Master Graph (Neo4j). See schema.txt for Neo4j constraints.
