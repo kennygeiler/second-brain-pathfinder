@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Compass, Gauge, LayoutGrid, Network, RefreshCw, Server } from "lucide-react";
+import {
+  Activity,
+  Compass,
+  Gauge,
+  LayoutGrid,
+  Network,
+  RefreshCw,
+  Server,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { api } from "./api";
 import type {
   ActionPlan,
   Conflict,
   GraphSnapshot,
+  RedTeamResult,
   Stakeholder,
   StakeholderDetail,
 } from "./api";
@@ -35,6 +46,24 @@ export function App() {
   const [tab, setTab] = useState<TabId>("overview");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<StakeholderDetail | null>(null);
+  const [pivotState, setPivotState] = useState<"idle" | "running" | "error">("idle");
+  const [pivotResult, setPivotResult] = useState<RedTeamResult | null>(null);
+  const [pivotError, setPivotError] = useState<string | null>(null);
+
+  async function runPivot() {
+    if (pivotState === "running") return;
+    setPivotState("running");
+    setPivotError(null);
+    try {
+      const result = await api.redTeam();
+      setPivotResult(result);
+      setPivotState("idle");
+      await load();
+    } catch (err) {
+      setPivotError(err instanceof Error ? err.message : "red-team failed");
+      setPivotState("error");
+    }
+  }
 
   async function load() {
     setState("loading");
@@ -112,6 +141,54 @@ export function App() {
         </div>
       )}
 
+      {pivotState === "running" && (
+        <div className="flex items-center gap-2 px-6 py-2" style={{ background: "#F59E0B18", borderBottom: "1px solid #F59E0B40" }}>
+          <Sparkles size={14} color="#F59E0B" className="animate-pulse" />
+          <p className="font-mono text-xs" style={{ color: "#FCD34D" }}>
+            Red Team running — querying Neo4j for institutional inertia, generating plan…
+          </p>
+        </div>
+      )}
+
+      {pivotState === "error" && pivotError && (
+        <div className="flex items-center gap-2 px-6 py-2" style={{ background: "#DC262618", borderBottom: "1px solid #DC262640" }}>
+          <p className="flex-1 font-mono text-xs" style={{ color: "#FCA5A5" }}>
+            Red Team failed: {pivotError}
+          </p>
+          <button onClick={() => setPivotState("idle")} style={{ color: "#FCA5A5" }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {pivotState === "idle" && pivotResult && (
+        <div className="flex items-center gap-3 px-6 py-2" style={{ background: "#22C55E15", borderBottom: "1px solid #22C55E40" }}>
+          <Sparkles size={14} color="#22C55E" />
+          <p className="flex-1 font-mono text-xs" style={{ color: "#86EFAC" }}>
+            Plan generated — {pivotResult.hotspots} hotspot(s)
+            {pivotResult.hotspot_names.length > 0 && (
+              <span style={{ color: "#8892A8" }}> · {pivotResult.hotspot_names.slice(0, 3).join(", ")}</span>
+            )}
+            {pivotResult.plan_path && (
+              <>
+                {" · "}
+                <code style={{ color: "#E8ECF4" }}>{pivotResult.plan_path}</code>
+              </>
+            )}
+          </p>
+          <button
+            onClick={() => setTab("overview")}
+            className="px-2 py-0.5 rounded font-mono text-xs"
+            style={{ background: "#1F2A40", color: "#86EFAC", border: "1px solid #22C55E40" }}
+          >
+            VIEW
+          </button>
+          <button onClick={() => setPivotResult(null)} style={{ color: "#86EFAC" }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-hidden">
         {tab === "overview" && (
           <Overview
@@ -131,7 +208,8 @@ export function App() {
           <ExecutiveHealthMatrix
             stakeholders={stakeholders}
             conflicts={conflicts}
-            onPivot={() => void load()}
+            onPivot={() => void runPivot()}
+            pivotRunning={pivotState === "running"}
           />
         )}
         {tab === "audit" && (

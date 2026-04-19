@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphSnapshot, GraphNode, GraphEdge } from "../api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,6 +18,10 @@ interface Pos {
   vx: number;
   vy: number;
 }
+
+type DragOp =
+  | { type: "pan"; startClientX: number; startClientY: number; startPanX: number; startPanY: number }
+  | { type: "node"; id: string; startClientX: number; startClientY: number; startX: number; startY: number };
 
 // ─── Color / shape helpers ────────────────────────────────────────────────────
 
@@ -53,7 +57,7 @@ const EDGE_COLOR: Record<string, string> = {
   LINKS_TO: "#8892A8",
 };
 
-// ─── Deterministic seeded PRNG (so layout doesn't jump on reload) ─────────────
+// ─── Deterministic seeded PRNG ───────────────────────────────────────────────
 
 function seedFromString(s: string): number {
   let h = 2166136261 >>> 0;
@@ -75,7 +79,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-// ─── Force-directed layout (Fruchterman–Reingold) ─────────────────────────────
+// ─── Fruchterman–Reingold layout ──────────────────────────────────────────────
 
 function computeLayout(
   nodes: GraphNode[],
@@ -86,8 +90,6 @@ function computeLayout(
   const pos = new Map<string, Pos>();
   if (nodes.length === 0) return pos;
 
-  // Seed from node-id set so the layout is stable across reloads but
-  // regenerates whenever the graph changes shape.
   const seed = seedFromString(
     nodes
       .map((n) => n.id)
@@ -101,7 +103,6 @@ function computeLayout(
   const radius = Math.min(W, H) * 0.35;
 
   nodes.forEach((n, i) => {
-    // distribute roughly on a circle with jitter
     const angle = (i / nodes.length) * Math.PI * 2 + rand() * 0.3;
     const r = radius * (0.4 + rand() * 0.6);
     pos.set(n.id, {
@@ -112,7 +113,6 @@ function computeLayout(
     });
   });
 
-  // ideal edge length
   const area = W * H;
   const k = Math.sqrt(area / Math.max(nodes.length, 1)) * 0.55;
   const iterations = nodes.length < 10 ? 250 : 350;
@@ -120,7 +120,6 @@ function computeLayout(
   for (let iter = 0; iter < iterations; iter++) {
     const t = Math.max(0.05, 1 - iter / iterations) * (Math.min(W, H) * 0.08);
 
-    // Repulsion — O(n²), fine for 24 nodes
     for (let i = 0; i < nodes.length; i++) {
       const a = pos.get(nodes[i].id)!;
       for (let j = 0; j < nodes.length; j++) {
@@ -128,15 +127,13 @@ function computeLayout(
         const b = pos.get(nodes[j].id)!;
         const dx = a.x - b.x;
         const dy = a.y - b.y;
-        const d2 = dx * dx + dy * dy;
-        const d = Math.sqrt(d2) || 0.01;
+        const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
         const force = (k * k) / d;
         a.vx += (dx / d) * force;
         a.vy += (dy / d) * force;
       }
     }
 
-    // Attraction along edges
     for (const e of edges) {
       const a = pos.get(e.source);
       const b = pos.get(e.target);
@@ -153,13 +150,11 @@ function computeLayout(
       b.vy += fy;
     }
 
-    // Weak pull toward center so disconnected nodes don't drift
     for (const p of pos.values()) {
       p.vx += (cx - p.x) * 0.012;
       p.vy += (cy - p.y) * 0.012;
     }
 
-    // Apply with temperature-capped displacement
     const pad = 90;
     for (const p of pos.values()) {
       const v = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 0.01;
@@ -176,106 +171,114 @@ function computeLayout(
   return pos;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── NodeShape (interactive) ──────────────────────────────────────────────────
 
 function NodeShape({
   node,
-  p,
+  x,
+  y,
   selected,
   dim,
-  onClick,
+  hovered,
+  onMouseDown,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   node: GraphNode;
-  p: Pos;
+  x: number;
+  y: number;
   selected: boolean;
   dim: boolean;
-  onClick?: () => void;
+  hovered: boolean;
+  onMouseDown: (e: React.MouseEvent) => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
 }) {
   const r = nodeRadius(node);
   const isSystem = typeIsSystem(node.type);
   const border = sentimentColor(node.sentiment);
   const inf = typeof node.influence === "number" ? node.influence : 0.5;
-  const showGlow = inf >= 0.65 || selected;
-  const glowStroke = selected ? "#3B82F6" : border;
+  const showGlow = inf >= 0.65 || selected || hovered;
+  const glowStroke = selected ? "#3B82F6" : hovered ? "#E8ECF4" : border;
   const opacity = dim ? 0.35 : 1;
   const initials = labelInitials(node.name);
   const label = node.name ?? node.id;
 
   return (
     <g
-      style={{ cursor: onClick ? "pointer" : "default", opacity }}
-      onClick={onClick}
+      style={{ cursor: "grab", opacity }}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {showGlow && (
-        <>
-          {isSystem ? (
-            <rect
-              x={p.x - r - 6}
-              y={p.y - r - 6}
-              width={r * 2 + 12}
-              height={r * 2 + 12}
-              rx={10}
-              fill={glowStroke}
-              opacity={0.18}
-              style={{ filter: "blur(8px)" }}
-            />
-          ) : (
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r={r + 8}
-              fill={glowStroke}
-              opacity={0.18}
-              style={{ filter: "blur(8px)" }}
-            />
-          )}
-        </>
+        isSystem ? (
+          <rect
+            x={x - r - 6}
+            y={y - r - 6}
+            width={r * 2 + 12}
+            height={r * 2 + 12}
+            rx={10}
+            fill={glowStroke}
+            opacity={0.18}
+            style={{ filter: "blur(8px)", pointerEvents: "none" }}
+          />
+        ) : (
+          <circle
+            cx={x}
+            cy={y}
+            r={r + 8}
+            fill={glowStroke}
+            opacity={0.18}
+            style={{ filter: "blur(8px)", pointerEvents: "none" }}
+          />
+        )
       )}
 
       {isSystem ? (
         <rect
-          x={p.x - r}
-          y={p.y - r}
+          x={x - r}
+          y={y - r}
           width={r * 2}
           height={r * 2}
           rx={6}
           fill="#1F2A40"
-          stroke={selected ? "#3B82F6" : border}
-          strokeWidth={selected ? 3 : 1.5}
+          stroke={selected ? "#3B82F6" : hovered ? "#E8ECF4" : border}
+          strokeWidth={selected || hovered ? 3 : 1.5}
         />
       ) : (
         <circle
-          cx={p.x}
-          cy={p.y}
+          cx={x}
+          cy={y}
           r={r}
           fill="#1F2A40"
-          stroke={selected ? "#3B82F6" : border}
-          strokeWidth={selected ? 3 : 1.5}
+          stroke={selected ? "#3B82F6" : hovered ? "#E8ECF4" : border}
+          strokeWidth={selected || hovered ? 3 : 1.5}
         />
       )}
 
       <text
-        x={p.x}
-        y={p.y + 1}
+        x={x}
+        y={y + 1}
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#E8ECF4"
         fontSize={r > 30 ? 13 : 11}
         fontWeight={700}
         fontFamily="JetBrains Mono, monospace"
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", userSelect: "none" }}
       >
         {initials}
       </text>
 
       <text
-        x={p.x}
-        y={p.y + r + 14}
+        x={x}
+        y={y + r + 14}
         textAnchor="middle"
-        fill={selected ? "#E8ECF4" : "#8892A8"}
+        fill={selected || hovered ? "#E8ECF4" : "#8892A8"}
         fontSize={10}
         fontFamily="JetBrains Mono, monospace"
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", userSelect: "none" }}
       >
         {label.length > 22 ? label.slice(0, 20) + "…" : label}
       </text>
@@ -283,40 +286,140 @@ function NodeShape({
   );
 }
 
+// ─── Edge ─────────────────────────────────────────────────────────────────────
+
 function EdgeLine({
-  a,
-  b,
+  ax,
+  ay,
+  bx,
+  by,
   color,
   width,
   dim,
 }: {
-  a: Pos;
-  b: Pos;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
   color: string;
   width: number;
   dim: boolean;
 }) {
-  // Curved quadratic path — gentle bow so overlapping edges separate visually.
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const midX = (a.x + b.x) / 2;
-  const midY = (a.y + b.y) / 2;
-  // Perpendicular offset, sign derived from hash so it's stable
+  const dx = bx - ax;
+  const dy = by - ay;
+  const midX = (ax + bx) / 2;
+  const midY = (ay + by) / 2;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
   const offset = Math.min(60, len * 0.12);
   const px = -dy / len;
   const py = dx / len;
-  const cx = midX + px * offset;
-  const cy = midY + py * offset;
+  const cpX = midX + px * offset;
+  const cpY = midY + py * offset;
   return (
     <path
-      d={`M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`}
+      d={`M ${ax} ${ay} Q ${cpX} ${cpY} ${bx} ${by}`}
       fill="none"
       stroke={color}
       strokeWidth={width}
       strokeLinecap="round"
       opacity={dim ? 0.15 : 0.6}
     />
+  );
+}
+
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+
+function Tooltip({
+  node,
+  edgeCount,
+  blockerCount,
+  left,
+  top,
+}: {
+  node: GraphNode;
+  edgeCount: number;
+  blockerCount: number;
+  left: number;
+  top: number;
+}) {
+  const sent = typeof node.sentiment === "number" ? node.sentiment : 0.5;
+  const inf = typeof node.influence === "number" ? node.influence : 0.5;
+  const sentCol = sentimentColor(sent);
+  return (
+    <div
+      className="absolute z-20 flex flex-col gap-1.5 rounded-md px-3 py-2.5"
+      style={{
+        left,
+        top,
+        background: "#0A0E17F0",
+        border: "1px solid #2A3650",
+        pointerEvents: "none",
+        minWidth: 200,
+        maxWidth: 280,
+        boxShadow: "0 8px 24px #00000080",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className="h-2 w-2 rounded-full"
+          style={{ background: sentCol }}
+        />
+        <span
+          className="font-mono font-bold text-xs"
+          style={{ color: "#E8ECF4" }}
+        >
+          {node.name ?? node.id}
+        </span>
+      </div>
+      <span
+        className="font-mono text-xs"
+        style={{ color: "#8892A8", letterSpacing: "0.05em" }}
+      >
+        {(node.type ?? "Unknown")}
+      </span>
+      <div className="flex items-center gap-3 mt-1">
+        <div className="flex flex-col">
+          <span className="font-mono text-xs" style={{ color: "#5A6580", fontSize: 9, letterSpacing: "0.08em" }}>
+            INFLUENCE
+          </span>
+          <span className="font-mono font-bold text-xs" style={{ color: "#F59E0B" }}>
+            {(inf * 10).toFixed(1)}
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span className="font-mono text-xs" style={{ color: "#5A6580", fontSize: 9, letterSpacing: "0.08em" }}>
+            SENTIMENT
+          </span>
+          <span className="font-mono font-bold text-xs" style={{ color: sentCol }}>
+            {(sent * 10).toFixed(1)}
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span className="font-mono text-xs" style={{ color: "#5A6580", fontSize: 9, letterSpacing: "0.08em" }}>
+            EDGES
+          </span>
+          <span className="font-mono font-bold text-xs" style={{ color: "#E8ECF4" }}>
+            {edgeCount}
+          </span>
+        </div>
+        {blockerCount > 0 && (
+          <div className="flex flex-col">
+            <span className="font-mono text-xs" style={{ color: "#5A6580", fontSize: 9, letterSpacing: "0.08em" }}>
+              BLOCKS
+            </span>
+            <span className="font-mono font-bold text-xs" style={{ color: "#EF4444" }}>
+              {blockerCount}
+            </span>
+          </div>
+        )}
+      </div>
+      <span
+        className="font-sans text-xs mt-1"
+        style={{ color: "#5A6580", fontSize: 10 }}
+      >
+        click to open audit · drag to reposition
+      </span>
+    </div>
   );
 }
 
@@ -330,12 +433,35 @@ export default function LiveGraph({
   selectedId = null,
   highlightIds,
 }: LiveGraphProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pinned, setPinned] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [dragOp, setDragOp] = useState<DragOp | null>(null);
+  const dragMovedRef = useRef(false);
+
   const positions = useMemo(
     () => computeLayout(graph.nodes, graph.edges, width, height),
     [graph, width, height],
   );
 
-  // Which nodes are connected to the selected node (for dimming)
+  // Clear pinned positions when graph shape changes
+  useEffect(() => {
+    setPinned(new Map());
+  }, [graph]);
+
+  const getPos = useCallback(
+    (id: string) => {
+      const pin = pinned.get(id);
+      if (pin) return pin;
+      const p = positions.get(id);
+      return p ? { x: p.x, y: p.y } : null;
+    },
+    [pinned, positions],
+  );
+
   const neighborhood = useMemo(() => {
     if (!selectedId) return null;
     const set = new Set<string>([selectedId]);
@@ -345,6 +471,170 @@ export default function LiveGraph({
     }
     return set;
   }, [graph.edges, selectedId]);
+
+  const degree = useMemo(() => {
+    const d = new Map<string, number>();
+    for (const e of graph.edges) {
+      d.set(e.source, (d.get(e.source) ?? 0) + 1);
+      d.set(e.target, (d.get(e.target) ?? 0) + 1);
+    }
+    return d;
+  }, [graph.edges]);
+
+  const blockerDegree = useMemo(() => {
+    const d = new Map<string, number>();
+    for (const e of graph.edges) {
+      if (e.type !== "BLOCKS") continue;
+      d.set(e.source, (d.get(e.source) ?? 0) + 1);
+      d.set(e.target, (d.get(e.target) ?? 0) + 1);
+    }
+    return d;
+  }, [graph.edges]);
+
+  // ─── Coord conversion helpers ─────────────────────────────────────────────
+
+  const clientDeltaToVb = useCallback((dxClient: number, dyClient: number) => {
+    const wrap = wrapperRef.current;
+    if (!wrap) return { dx: 0, dy: 0 };
+    const rect = wrap.getBoundingClientRect();
+    const scale = Math.min(rect.width / width, rect.height / height) || 1;
+    return {
+      dx: dxClient / scale,
+      dy: dyClient / scale,
+    };
+  }, [width, height]);
+
+  const vbContentToClient = useCallback(
+    (vbX: number, vbY: number) => {
+      const wrap = wrapperRef.current;
+      if (!wrap) return { x: 0, y: 0 };
+      const rect = wrap.getBoundingClientRect();
+      const scale = Math.min(rect.width / width, rect.height / height) || 1;
+      // preserveAspectRatio="xMidYMid meet" centers the viewBox in the container
+      const renderedW = width * scale;
+      const renderedH = height * scale;
+      const offsetX = (rect.width - renderedW) / 2;
+      const offsetY = (rect.height - renderedH) / 2;
+      // transform: content -> viewBox (apply g-transform: scale then translate)
+      const postVbX = zoom * vbX + pan.x;
+      const postVbY = zoom * vbY + pan.y;
+      return {
+        x: offsetX + postVbX * scale,
+        y: offsetY + postVbY * scale,
+      };
+    },
+    [width, height, zoom, pan],
+  );
+
+  // ─── Event handlers ───────────────────────────────────────────────────────
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      const wrap = wrapperRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      const scale = Math.min(rect.width / width, rect.height / height) || 1;
+      const renderedW = width * scale;
+      const renderedH = height * scale;
+      const offsetX = (rect.width - renderedW) / 2;
+      const offsetY = (rect.height - renderedH) / 2;
+
+      // Mouse in viewBox coords (post-transform space)
+      const mxVb = (e.clientX - rect.left - offsetX) / scale;
+      const myVb = (e.clientY - rect.top - offsetY) / scale;
+
+      // Point under mouse in CONTENT space (pre g-transform)
+      const contentX = (mxVb - pan.x) / zoom;
+      const contentY = (myVb - pan.y) / zoom;
+
+      const delta = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const newZoom = Math.max(0.4, Math.min(3, zoom * delta));
+
+      // Keep that content point under the mouse after zoom
+      const newPanX = mxVb - newZoom * contentX;
+      const newPanY = myVb - newZoom * contentY;
+
+      setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
+    },
+    [width, height, zoom, pan],
+  );
+
+  const handleSvgMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start pan if the click isn't on a node (nodes call stopPropagation)
+    setDragOp({
+      type: "pan",
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPanX: pan.x,
+      startPanY: pan.y,
+    });
+  }, [pan]);
+
+  const handleNodeMouseDown = useCallback(
+    (id: string) => (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const p = getPos(id);
+      if (!p) return;
+      dragMovedRef.current = false;
+      setDragOp({
+        type: "node",
+        id,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startX: p.x,
+        startY: p.y,
+      });
+    },
+    [getPos],
+  );
+
+  // Doc-level listeners so drags work when mouse leaves the SVG.
+  useEffect(() => {
+    if (!dragOp) return;
+
+    const onMove = (ev: MouseEvent) => {
+      const dxClient = ev.clientX - dragOp.startClientX;
+      const dyClient = ev.clientY - dragOp.startClientY;
+      const { dx, dy } = clientDeltaToVb(dxClient, dyClient);
+
+      if (dragOp.type === "pan") {
+        if (Math.abs(dxClient) > 3 || Math.abs(dyClient) > 3) dragMovedRef.current = true;
+        setPan({ x: dragOp.startPanX + dx, y: dragOp.startPanY + dy });
+      } else {
+        if (Math.abs(dxClient) > 3 || Math.abs(dyClient) > 3) dragMovedRef.current = true;
+        const newX = dragOp.startX + dx / zoom;
+        const newY = dragOp.startY + dy / zoom;
+        setPinned((prev) => {
+          const next = new Map(prev);
+          next.set(dragOp.id, { x: newX, y: newY });
+          return next;
+        });
+      }
+    };
+
+    const onUp = () => {
+      if (dragOp.type === "node" && !dragMovedRef.current && onNodeClick) {
+        onNodeClick(dragOp.id);
+      }
+      setDragOp(null);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [dragOp, clientDeltaToVb, zoom, onNodeClick]);
+
+  const handleReset = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setPinned(new Map());
+  }, []);
+
+  // ─── Empty state ──────────────────────────────────────────────────────────
 
   if (graph.nodes.length === 0) {
     return (
@@ -370,54 +660,141 @@ export default function LiveGraph({
     );
   }
 
-  return (
-    <svg
-      className="absolute inset-0 h-full w-full"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {graph.edges.map((e, i) => {
-        const a = positions.get(e.source);
-        const b = positions.get(e.target);
-        if (!a || !b) return null;
-        const color = EDGE_COLOR[e.type] ?? "#6B7280";
-        const isBlocker = e.type === "BLOCKS";
-        const width = isBlocker ? 2.5 : 1.5;
-        const dim =
-          (neighborhood != null &&
-            !(neighborhood.has(e.source) && neighborhood.has(e.target))) ||
-          (highlightIds != null &&
-            !(highlightIds.has(e.source) && highlightIds.has(e.target)));
-        return (
-          <EdgeLine
-            key={`${e.source}→${e.target}-${e.type}-${i}`}
-            a={a}
-            b={b}
-            color={color}
-            width={width}
-            dim={dim}
-          />
-        );
-      })}
+  // ─── Tooltip data ─────────────────────────────────────────────────────────
 
-      {graph.nodes.map((n) => {
-        const p = positions.get(n.id);
-        if (!p) return null;
-        const selected = selectedId === n.id;
-        const dim =
-          (neighborhood != null && !neighborhood.has(n.id)) ||
-          (highlightIds != null && !highlightIds.has(n.id));
-        return (
-          <NodeShape
-            key={n.id}
-            node={n}
-            p={p}
-            selected={selected}
-            dim={dim}
-            onClick={onNodeClick ? () => onNodeClick(n.id) : undefined}
-          />
-        );
-      })}
-    </svg>
+  const hoveredNode = hoveredId ? graph.nodes.find((n) => n.id === hoveredId) : null;
+  let tooltipPos: { left: number; top: number } | null = null;
+  if (hoveredNode) {
+    const p = getPos(hoveredNode.id);
+    if (p) {
+      const clientP = vbContentToClient(p.x, p.y);
+      const r = nodeRadius(hoveredNode);
+      tooltipPos = {
+        left: clientP.x + r * zoom + 16,
+        top: Math.max(8, clientP.y - 40),
+      };
+    }
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="absolute inset-0 select-none"
+      onWheel={handleWheel}
+      style={{ cursor: dragOp?.type === "pan" ? "grabbing" : "default" }}
+    >
+      <svg
+        className="h-full w-full"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+        onMouseDown={handleSvgMouseDown}
+      >
+        <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
+          {graph.edges.map((e, i) => {
+            const a = getPos(e.source);
+            const b = getPos(e.target);
+            if (!a || !b) return null;
+            const color = EDGE_COLOR[e.type] ?? "#6B7280";
+            const isBlocker = e.type === "BLOCKS";
+            const strokeW = isBlocker ? 2.5 : 1.5;
+            const dim =
+              (neighborhood != null &&
+                !(neighborhood.has(e.source) && neighborhood.has(e.target))) ||
+              (highlightIds != null &&
+                !(highlightIds.has(e.source) && highlightIds.has(e.target)));
+            return (
+              <EdgeLine
+                key={`${e.source}→${e.target}-${e.type}-${i}`}
+                ax={a.x}
+                ay={a.y}
+                bx={b.x}
+                by={b.y}
+                color={color}
+                width={strokeW}
+                dim={dim}
+              />
+            );
+          })}
+
+          {graph.nodes.map((n) => {
+            const p = getPos(n.id);
+            if (!p) return null;
+            const selected = selectedId === n.id;
+            const hovered = hoveredId === n.id;
+            const dim =
+              (neighborhood != null && !neighborhood.has(n.id)) ||
+              (highlightIds != null && !highlightIds.has(n.id));
+            return (
+              <NodeShape
+                key={n.id}
+                node={n}
+                x={p.x}
+                y={p.y}
+                selected={selected}
+                dim={dim}
+                hovered={hovered}
+                onMouseDown={handleNodeMouseDown(n.id)}
+                onMouseEnter={() => setHoveredId(n.id)}
+                onMouseLeave={() => setHoveredId((id) => (id === n.id ? null : id))}
+              />
+            );
+          })}
+        </g>
+      </svg>
+
+      {hoveredNode && tooltipPos && (
+        <Tooltip
+          node={hoveredNode}
+          edgeCount={degree.get(hoveredNode.id) ?? 0}
+          blockerCount={blockerDegree.get(hoveredNode.id) ?? 0}
+          left={tooltipPos.left}
+          top={tooltipPos.top}
+        />
+      )}
+
+      {/* Controls overlay — zoom level + reset button */}
+      <div
+        className="absolute z-10 flex items-center gap-1.5 rounded-md px-2 py-1"
+        style={{
+          right: 16,
+          bottom: 16,
+          background: "#0A0E17CC",
+          border: "1px solid #2A3650",
+        }}
+      >
+        <button
+          onClick={() => setZoom((z) => Math.min(3, z * 1.2))}
+          className="px-1.5 py-0.5 rounded font-mono text-xs"
+          style={{ background: "#1F2A40", color: "#E8ECF4", border: "1px solid #2A3650" }}
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          onClick={() => setZoom((z) => Math.max(0.4, z / 1.2))}
+          className="px-1.5 py-0.5 rounded font-mono text-xs"
+          style={{ background: "#1F2A40", color: "#E8ECF4", border: "1px solid #2A3650" }}
+          title="Zoom out"
+        >
+          −
+        </button>
+        <span
+          className="font-mono text-xs px-1.5"
+          style={{ color: "#8892A8" }}
+        >
+          {(zoom * 100).toFixed(0)}%
+        </span>
+        <button
+          onClick={handleReset}
+          className="px-2 py-0.5 rounded font-mono text-xs"
+          style={{ background: "#1F2A40", color: "#8892A8", border: "1px solid #2A3650" }}
+          title="Reset view"
+        >
+          RESET
+        </button>
+      </div>
+    </div>
   );
 }

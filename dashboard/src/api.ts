@@ -73,6 +73,22 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export type RedTeamResult = {
+  hotspots: number;
+  plan_path: string | null;
+  conflict_detected: boolean;
+  narrative_preview: string;
+  hotspot_names: string[];
+};
+
+async function postJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return (await response.json()) as T;
+}
+
 export const api = {
   stakeholders: () => getJson<Stakeholder[]>("/stakeholders"),
   stakeholder: (id: string) =>
@@ -80,4 +96,5 @@ export const api = {
   conflicts: () => getJson<Conflict[]>("/conflicts"),
   actionPlans: () => getJson<ActionPlan[]>("/action-plans"),
   graph: () => getJson<GraphSnapshot>("/graph"),
+  redTeam: () => postJson<RedTeamResult>("/red-team"),
 };

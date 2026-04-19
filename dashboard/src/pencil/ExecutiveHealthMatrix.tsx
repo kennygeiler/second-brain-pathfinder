@@ -9,6 +9,7 @@ export interface ExecutiveHealthMatrixProps {
   stakeholders?: LiveStakeholder[]
   conflicts?: Conflict[]
   onPivot?: () => void
+  pivotRunning?: boolean
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -272,12 +273,14 @@ function DataLineageSidebar({
   conflictCount,
   onPivot,
   pivotEnabled,
+  pivotRunning,
 }: {
   lineage: LineageNode[]
   stats: LineageStats
   conflictCount: number
   onPivot?: () => void
   pivotEnabled: boolean
+  pivotRunning: boolean
 }) {
   const planColor = conflictCount > 0 ? '#F59E0B' : '#22C55E'
   const planLabel = conflictCount > 0 ? 'Plan: PENDING REVIEW' : 'Plan: GREEN — graph reconciled'
@@ -362,19 +365,23 @@ function DataLineageSidebar({
         </p>
         <button
           onClick={onPivot}
-          disabled={!pivotEnabled}
+          disabled={!pivotEnabled || pivotRunning}
           className="flex items-center justify-center gap-2.5 px-6 py-4 rounded-lg font-mono font-bold text-sm tracking-widest w-full"
           style={{
-            background: pivotEnabled ? '#F59E0B' : '#3B3F52',
-            color: pivotEnabled ? '#0A0E17' : '#8892A8',
+            background: !pivotEnabled ? '#3B3F52' : pivotRunning ? '#78350F' : '#F59E0B',
+            color: !pivotEnabled ? '#8892A8' : pivotRunning ? '#FCD34D' : '#0A0E17',
             letterSpacing: '0.08em',
-            boxShadow: pivotEnabled ? '0 4px 16px #F59E0B30' : 'none',
+            boxShadow: pivotEnabled && !pivotRunning ? '0 4px 16px #F59E0B30' : 'none',
             border: 'none',
-            cursor: pivotEnabled ? 'pointer' : 'not-allowed',
+            cursor: !pivotEnabled ? 'not-allowed' : pivotRunning ? 'wait' : 'pointer',
           }}
         >
-          <Zap size={20} color={pivotEnabled ? '#0A0E17' : '#8892A8'} />
-          INITIATE STRATEGIC PIVOT
+          <Zap
+            size={20}
+            color={!pivotEnabled ? '#8892A8' : pivotRunning ? '#FCD34D' : '#0A0E17'}
+            className={pivotRunning ? 'animate-pulse' : undefined}
+          />
+          {pivotRunning ? 'RUNNING RED TEAM…' : 'INITIATE STRATEGIC PIVOT'}
         </button>
         <div className="flex items-start gap-1.5 px-2.5 py-2 rounded" style={{ background: '#1A2035' }}>
           <Info size={12} color="#5A6580" className="mt-0.5 flex-shrink-0" />
@@ -389,7 +396,7 @@ function DataLineageSidebar({
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function ExecutiveHealthMatrix({ stakeholders, conflicts, onPivot }: ExecutiveHealthMatrixProps = {}) {
+export default function ExecutiveHealthMatrix({ stakeholders, conflicts, onPivot, pivotRunning }: ExecutiveHealthMatrixProps = {}) {
   const live = stakeholders && stakeholders.length > 0
   const chartData = live ? mapLiveToChart(stakeholders!) : MOCK_STAKEHOLDERS
   const lineage   = live ? lineageFromLive(stakeholders!) : MOCK_LINEAGE
@@ -412,6 +419,7 @@ export default function ExecutiveHealthMatrix({ stakeholders, conflicts, onPivot
         stats={{ verified, partial, missing, pct }}
         conflictCount={conflicts?.length ?? 0}
         onPivot={onPivot}
+        pivotRunning={!!pivotRunning}
         pivotEnabled={!!onPivot}
       />
     </div>

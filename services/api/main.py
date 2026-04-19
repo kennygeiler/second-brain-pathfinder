@@ -32,6 +32,42 @@ def trigger_sync(commit: bool = False) -> dict[str, Any]:
     return obsidian_to_neo4j.sync(auto_commit=commit or settings.auto_commit)
 
 
+@app.post("/red-team")
+def trigger_red_team() -> dict[str, Any]:
+    """Run the LangGraph Red Team; emit a fresh action plan markdown.
+
+    Synchronous for now — LLM call takes seconds, not minutes. If it grows we
+    can hand it off to a background task or a websocket channel.
+    """
+    try:
+        from agents.red_team_graph import run_red_team
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            status_code=500,
+            detail=f"red-team graph unavailable: {exc}",
+        )
+
+    state = run_red_team({})
+    hotspots = state.get("entities", [])
+    plan_path_raw = state.get("raw_input") or ""
+    narrative = state.get("reconciliation_plan") or ""
+
+    plan_path: Optional[str] = None
+    if plan_path_raw:
+        try:
+            plan_path = str(Path(plan_path_raw).relative_to(settings.vault))
+        except ValueError:
+            plan_path = plan_path_raw
+
+    return {
+        "hotspots": len(hotspots),
+        "plan_path": plan_path,
+        "conflict_detected": bool(state.get("conflict_detected")),
+        "narrative_preview": narrative[:400],
+        "hotspot_names": [h.get("name") for h in hotspots if h.get("name")],
+    }
+
+
 @app.get("/stakeholders")
 def list_stakeholders() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
