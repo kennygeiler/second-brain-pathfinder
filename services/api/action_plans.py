@@ -184,6 +184,19 @@ def update_task_status(rel_path: str, idx: int, status: TaskStatus) -> dict[str,
     }
 
 
+def _safe_task_idx(raw: Any) -> Optional[int]:
+    """Return a non-negative task index, or None if the vault value is unusable."""
+    if raw is None:
+        return None
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        return None
+    return v
+
+
 def collect_open_tasks(*, limit: int = 40) -> list[dict[str, Any]]:
     """Flatten todo tasks from all action plans (newest plans first)."""
     plans_dir = settings.vault / "action_plans"
@@ -207,16 +220,19 @@ def collect_open_tasks(*, limit: int = 40) -> list[dict[str, Any]]:
                 continue
             if t.get("status") != "todo":
                 continue
+            idx = _safe_task_idx(t.get("idx"))
+            if idx is None:
+                continue
             out.append(
                 {
                     "plan_path": rel,
-                    "idx": int(t.get("idx", 0)),
-                    "action": t.get("action", ""),
-                    "rationale": t.get("rationale", ""),
-                    "due_by": t.get("due_by", ""),
-                    "priority": t.get("priority", "p1"),
-                    "stakeholder_id": t.get("stakeholder_id") or "",
-                    "stakeholder_name": t.get("stakeholder_name", ""),
+                    "idx": idx,
+                    "action": str(t.get("action") or ""),
+                    "rationale": str(t.get("rationale") or ""),
+                    "due_by": str(t.get("due_by") or ""),
+                    "priority": str(t.get("priority") or "p1"),
+                    "stakeholder_id": str(t.get("stakeholder_id") or ""),
+                    "stakeholder_name": str(t.get("stakeholder_name") or ""),
                 }
             )
             if len(out) >= limit:

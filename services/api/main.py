@@ -132,6 +132,9 @@ def list_stakeholders() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for note in vault.iter_stakeholder_notes():
         data = note.data
+        blockers = data.get("technical_blockers") or []
+        if not isinstance(blockers, list):
+            blockers = []
         results.append(
             {
                 "id": note.id,
@@ -140,7 +143,7 @@ def list_stakeholders() -> list[dict[str, Any]]:
                 "influence_score": data.get("influence_score"),
                 "sentiment_vector": data.get("sentiment_vector"),
                 "confidence_score": data.get("confidence_score"),
-                "technical_blockers": data.get("technical_blockers", []),
+                "technical_blockers": blockers,
                 "path": str(note.path.relative_to(settings.vault)),
             }
         )
@@ -276,6 +279,29 @@ def list_action_plans(limit: int = Query(default=20, ge=1, le=200)) -> list[dict
     return plans
 
 
+def _jsonify_graph_value(val: Any) -> Any:
+    """Make Neo4j property values and nested structures JSON-serializable for FastAPI."""
+    if val is None or isinstance(val, (str, int, float, bool)):
+        return val
+    if isinstance(val, dict):
+        return {str(k): _jsonify_graph_value(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)):
+        return [_jsonify_graph_value(v) for v in val]
+    return str(val)
+
+
+def _neo4j_entity_props(node: Any) -> dict[str, Any]:
+    """Extract Entity node properties without assuming dict(node) works across driver versions."""
+    try:
+        raw = dict(node)
+    except Exception:
+        try:
+            raw = {k: node.get(k) for k in node.keys()}  # type: ignore[attr-defined]
+        except Exception:
+            return {}
+    return {str(k): _jsonify_graph_value(v) for k, v in raw.items()}
+
+
 @app.get("/graph")
 def graph_snapshot(limit: int = Query(default=200, ge=1, le=2000)) -> dict[str, Any]:
     """Return graph metrics from Neo4j when available, else from proposed queue."""
@@ -290,17 +316,16 @@ def graph_snapshot(limit: int = Query(default=200, ge=1, le=2000)) -> dict[str, 
             auth=(settings.neo4j_user, settings.neo4j_password),
         )
         with driver.session() as session:
-            nodes = [
-                dict(record["e"])
-                for record in session.run(
-                    "MATCH (e:Entity) RETURN e LIMIT $limit", limit=limit
-                )
-            ]
+            nodes = []
+            for record in session.run(
+                "MATCH (e:Entity) RETURN e LIMIT $limit", limit=limit
+            ):
+                nodes.append(_neo4j_entity_props(record["e"]))
             edges = [
                 {
-                    "source": record["source_id"],
-                    "target": record["target_id"],
-                    "type": record["rel"],
+                    "source": _jsonify_graph_value(record["source_id"]),
+                    "target": _jsonify_graph_value(record["target_id"]),
+                    "type": _jsonify_graph_value(record["rel"]),
                 }
                 for record in session.run(
                     "MATCH (a:Entity)-[r]->(b:Entity) "
@@ -324,9 +349,14 @@ def _proposed_snapshot(limit: int) -> dict[str, Any]:
         return {"source": "empty", "nodes": [], "edges": []}
     import json
 
-    payload = json.loads(latest.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+    except Exception:
+        return {"source": "empty", "nodes": [], "edges": []}
+    if not isinstance(payload, dict):
+        return {"source": "empty", "nodes": [], "edges": []}
     return {
         "source": f"proposed:{latest.name}",
-        "nodes": payload.get("nodes", [])[:limit],
-        "edges": payload.get("edges", [])[:limit],
+        "nodes": (payload.get("nodes") or [])[:limit] if isinstance(payload.get("nodes"), list) else [],
+        "edges": (payload.get("edges") or [])[:limit] if isinstance(payload.get("edges"), list) else [],
     }

@@ -62,6 +62,16 @@ def test_collect_open_tasks(_isolated_vault: Path) -> None:
     assert "action_plans/" in open_t[0]["plan_path"]
 
 
+def test_collect_open_tasks_skips_bad_idx(_isolated_vault: Path) -> None:
+    """Malformed task idx must not take down GET /today."""
+    plans = _isolated_vault / "action_plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    body = _minimal_plan_body().replace("idx: 0", "idx: null")
+    p = plans / "Pathfinder-Action-Plan-badidx.md"
+    p.write_text(body, encoding="utf-8")
+    assert action_plans.collect_open_tasks(limit=10) == []
+
+
 def test_patch_task_updates_yaml_and_body(_isolated_vault: Path) -> None:
     plans = _isolated_vault / "action_plans"
     plans.mkdir(parents=True, exist_ok=True)
