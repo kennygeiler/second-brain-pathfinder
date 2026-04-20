@@ -261,6 +261,7 @@ Roughly aligned with a **Days 6–7** style follow-up:
 - [vault-schema.yaml](vault-schema.yaml) — canonical frontmatter keys  
 - [schema.txt](schema.txt) — Neo4j constraints and example Cypher  
 - [SHOWSTOPPER.md](SHOWSTOPPER.md) — MVP validation checklist (if present)
+- [PROJECT_MEMORY.md](PROJECT_MEMORY.md) — maintainer handoff and next-work context
 
 ---
 
