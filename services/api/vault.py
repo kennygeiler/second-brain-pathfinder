@@ -57,6 +57,22 @@ def vault_root() -> Path:
     return root
 
 
+def relpath_under_vault(path: Path) -> str:
+    """Stable vault-relative path for JSON APIs (avoids ValueError if resolve/cwd drifts)."""
+    root = vault_root().resolve()
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    try:
+        return str(resolved.relative_to(root))
+    except ValueError:
+        try:
+            return str(path.resolve(strict=False).relative_to(root))
+        except (OSError, ValueError):
+            return path.name
+
+
 def iter_stakeholder_notes(include_conflicts: bool = False) -> Iterable[StakeholderNote]:
     root = vault_root()
     for md in root.rglob("*.md"):

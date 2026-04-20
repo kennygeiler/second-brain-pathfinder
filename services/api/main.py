@@ -7,6 +7,7 @@ from typing import Any, Literal, Optional
 
 import frontmatter
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -53,9 +54,9 @@ def _serialize_detail(note: vault.StakeholderNote) -> dict[str, Any]:
     return {
         "id": note.id,
         "name": note.name,
-        "metadata": note.data,
+        "metadata": jsonable_encoder(note.data),
         "content": note.post.content,
-        "path": str(note.path.relative_to(settings.vault)),
+        "path": vault.relpath_under_vault(note.path),
     }
 
 app = FastAPI(title="Pathfinder Core", version="0.1.0")
@@ -76,14 +77,15 @@ def health() -> dict[str, str]:
 @app.get("/today")
 def get_today() -> dict[str, Any]:
     """Priority stack for the dashboard: conflicts, Red Team hotspots, stale, ghosts."""
-    return today_mod.build_today_payload(stale_days=settings.stale_days)
+    payload = today_mod.build_today_payload(stale_days=settings.stale_days)
+    return jsonable_encoder(payload)
 
 
 @app.get("/moments")
 def get_moments(year: Optional[int] = Query(default=None, ge=2000, le=2100)) -> dict[str, Any]:
     """Stakeholder lineage + conflicts + last Red Team run, bucketed by calendar day."""
     y = year if year is not None else datetime.now(timezone.utc).year
-    return moments_mod.collect_moments(y)
+    return jsonable_encoder(moments_mod.collect_moments(y))
 
 
 @app.post("/sync")
@@ -114,9 +116,9 @@ def trigger_red_team() -> dict[str, Any]:
     plan_path: Optional[str] = None
     if plan_path_raw:
         try:
-            plan_path = str(Path(plan_path_raw).relative_to(settings.vault))
-        except ValueError:
-            plan_path = plan_path_raw
+            plan_path = vault.relpath_under_vault(Path(plan_path_raw))
+        except Exception:
+            plan_path = str(plan_path_raw)
 
     return {
         "hotspots": len(hotspots),
@@ -144,10 +146,10 @@ def list_stakeholders() -> list[dict[str, Any]]:
                 "sentiment_vector": data.get("sentiment_vector"),
                 "confidence_score": data.get("confidence_score"),
                 "technical_blockers": blockers,
-                "path": str(note.path.relative_to(settings.vault)),
+                "path": vault.relpath_under_vault(note.path),
             }
         )
-    return results
+    return jsonable_encoder(results)
 
 
 @app.get("/stakeholders/{entity_id}")
@@ -200,7 +202,7 @@ def archive_stakeholder(entity_id: str) -> dict[str, Any]:
     new_path = vault.archive_note(note)
     return {
         "id": entity_id,
-        "archived_to": str(new_path.relative_to(settings.vault)),
+        "archived_to": vault.relpath_under_vault(new_path),
     }
 
 
@@ -239,12 +241,12 @@ def list_conflicts(limit: int = Query(default=50, ge=1, le=500)) -> list[dict[st
             continue
         items.append(
             {
-                "path": str(md.relative_to(settings.vault)),
-                "metadata": post.metadata,
+                "path": vault.relpath_under_vault(md),
+                "metadata": jsonable_encoder(post.metadata or {}),
                 "content": post.content,
             }
         )
-    return items
+    return jsonable_encoder(items)
 
 
 @app.patch("/action-plans/task")
@@ -271,12 +273,12 @@ def list_action_plans(limit: int = Query(default=20, ge=1, le=200)) -> list[dict
             continue
         plans.append(
             {
-                "path": str(md.relative_to(settings.vault)),
-                "metadata": post.metadata,
+                "path": vault.relpath_under_vault(md),
+                "metadata": jsonable_encoder(post.metadata or {}),
                 "content": post.content,
             }
         )
-    return plans
+    return jsonable_encoder(plans)
 
 
 def _jsonify_graph_value(val: Any) -> Any:
