@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import frontmatter
 
-from . import vault
+from . import action_plans, vault
 from .config import settings
 
 CONTACT_SOURCE_TYPES = frozenset({"voice_ledger", "email", "meeting"})
@@ -150,6 +150,8 @@ def build_today_payload(*, stale_days: int, conflict_limit: int = 10) -> dict[st
             if isinstance(h, dict):
                 at_risk.append(dict(h))
 
+    open_tasks = action_plans.collect_open_tasks(limit=40)
+
     return {
         "stale_days": stale_days,
         "last_red_team_at": last_run,
@@ -158,4 +160,5 @@ def build_today_payload(*, stale_days: int, conflict_limit: int = 10) -> dict[st
         "at_risk": at_risk,
         "stale": stale_out,
         "ghost_nodes": ghost_out,
+        "open_tasks": open_tasks,
     }

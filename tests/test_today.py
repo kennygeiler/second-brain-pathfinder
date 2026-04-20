@@ -22,6 +22,7 @@ def test_today_empty_vault(_isolated_vault: Path) -> None:
     assert data["at_risk"] == []
     assert data["stale"] == []
     assert data["ghost_nodes"] == []
+    assert data["open_tasks"] == []
     assert data["last_red_team_at"] is None
 
 

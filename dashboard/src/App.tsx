@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  CheckSquare,
   Clock,
   Compass,
   Flame,
   Gauge,
   Ghost,
   LayoutGrid,
+  ListTodo,
   Mic,
   Network,
   RefreshCw,
@@ -256,6 +258,7 @@ export function App() {
             }}
             onRunRedTeam={() => void runPivot()}
             pivotRunning={pivotState === "running"}
+            onRefresh={() => void load()}
           />
         )}
         {tab === "capture" && (
@@ -499,11 +502,15 @@ function TodayView(props: {
   onSelectStakeholder: (id: string) => void;
   onRunRedTeam: () => void;
   pivotRunning: boolean;
+  onRefresh: () => void;
 }) {
+  const [taskBusyKey, setTaskBusyKey] = useState<string | null>(null);
   const t = props.today;
+  const openTasks = t?.open_tasks ?? [];
   const hasPriority =
     t &&
-    (t.conflicts.length > 0 ||
+    (openTasks.length > 0 ||
+      t.conflicts.length > 0 ||
       t.at_risk.length > 0 ||
       t.stale.length > 0 ||
       t.ghost_nodes.length > 0);
@@ -588,10 +595,113 @@ function TodayView(props: {
           </p>
         )}
 
+        {t && openTasks.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #22C55E40" }}>
+            <SectionHeader icon={ListTodo} label="OPEN ACTIONS — RED TEAM TASKS" accent="#22C55E" />
+            <p className="font-mono text-[11px]" style={{ color: "#5A6580" }}>
+              Check tasks off here or in Obsidian; vault YAML and markdown stay in sync.
+            </p>
+            <div className="flex flex-col gap-2">
+              {openTasks.map((task) => {
+                const busy = taskBusyKey === `${task.plan_path}:${task.idx}`;
+                const overdue = task.due_by && Date.parse(`${task.due_by}T12:00:00`) < Date.now();
+                return (
+                  <div
+                    key={`${task.plan_path}:${task.idx}`}
+                    className="flex items-start gap-3 px-3 py-2.5 rounded-md"
+                    style={{ background: "#1A2035", border: "1px solid #1E2A3E" }}
+                  >
+                    <button
+                      type="button"
+                      title="Mark done"
+                      disabled={busy}
+                      onClick={() => {
+                        void (async () => {
+                          setTaskBusyKey(`${task.plan_path}:${task.idx}`);
+                          try {
+                            await api.patchActionPlanTask({
+                              path: task.plan_path,
+                              idx: task.idx,
+                              status: "done",
+                            });
+                            props.onRefresh();
+                          } catch (e) {
+                            console.error(e);
+                          } finally {
+                            setTaskBusyKey(null);
+                          }
+                        })();
+                      }}
+                      className="flex-shrink-0 mt-0.5 rounded p-0.5"
+                      style={{
+                        color: busy ? "#5A6580" : "#22C55E",
+                        cursor: busy ? "wait" : "pointer",
+                        background: "transparent",
+                        border: "none",
+                      }}
+                    >
+                      <CheckSquare size={18} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded"
+                          style={{
+                            background: "#1F2A40",
+                            color: task.priority === "p0" ? "#FCA5A5" : "#8892A8",
+                          }}
+                        >
+                          {String(task.priority || "p1").toUpperCase()}
+                        </span>
+                        {task.due_by && (
+                          <span
+                            className="font-mono text-[11px]"
+                            style={{ color: overdue ? "#FCA5A5" : "#5A6580" }}
+                          >
+                            due {task.due_by}
+                            {overdue ? " · overdue" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-mono text-sm mt-1" style={{ color: "#E8ECF4" }}>
+                        {task.action}
+                      </p>
+                      {task.rationale && (
+                        <p className="font-sans text-xs mt-1" style={{ color: "#5A6580", lineHeight: 1.4 }}>
+                          {task.rationale}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {task.stakeholder_id ? (
+                          <button
+                            type="button"
+                            className="font-mono text-[11px]"
+                            style={{ color: "#3B82F6" }}
+                            onClick={() => props.onSelectStakeholder(task.stakeholder_id)}
+                          >
+                            {task.stakeholder_name || "Stakeholder"}
+                          </button>
+                        ) : (
+                          <span className="font-mono text-[11px]" style={{ color: "#5A6580" }}>
+                            {task.stakeholder_name || "Unknown stakeholder"}
+                          </span>
+                        )}
+                        <span className="font-mono text-[10px] truncate" style={{ color: "#5A6580" }}>
+                          {task.plan_path}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {!props.loading && t && !hasPriority && (
           <EmptyState
             title="No urgent items — nice."
-            body="When conflicts fire, Red Team finds inertia hotspots, contacts go stale, or cold-start ghosts linger, they will stack here."
+            body="Open Red Team tasks, conflicts, inertia hotspots, stale contacts, or ghosts will surface here."
           />
         )}
 

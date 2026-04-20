@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
 from services.api import vault
+from services.api.action_plans import RedTeamPlanSpec, RedTeamTaskSpec, build_markdown_file, spec_to_task_dicts
 from services.api.config import settings
 
 RED_TEAM_SYSTEM_PROMPT = (
@@ -26,6 +27,7 @@ class AgentState(TypedDict, total=False):
     conflict_detected: bool
     reconciliation_plan: str
     graph_update_required: bool
+    structured_plan: dict[str, Any]
 
 
 INERTIA_CYPHER = (
@@ -125,6 +127,67 @@ def _heuristic_narrative(hotspot: dict[str, Any]) -> str:
     )
 
 
+def _heuristic_plan_spec(hotspots: list[dict[str, Any]]) -> RedTeamPlanSpec:
+    tasks: list[RedTeamTaskSpec] = []
+    for i, h in enumerate(hotspots):
+        due = (date.today() + timedelta(days=7 + i * 2)).isoformat()
+        tasks.append(
+            RedTeamTaskSpec(
+                stakeholder_name=str(h.get("name") or "Unknown"),
+                action=(
+                    f"Schedule a working session on {h.get('system_name', 'system')} "
+                    "integration and unblock measured usage."
+                ),
+                rationale=(
+                    f"Influence {float(h.get('influence', 0.0)):.2f} vs telemetry "
+                    f"{float(h.get('telemetry', 0.0)):.2f} — institutional inertia risk."
+                ),
+                due_by=due,
+                priority="p0" if i == 0 else "p1",
+            )
+        )
+    return RedTeamPlanSpec(
+        summary=(
+            "Institutional inertia detected: high-influence stakeholders show "
+            "low product telemetry relative to their authority."
+        ),
+        tasks=tasks,
+    )
+
+
+def _llm_structured_plan(hotspots: list[dict[str, Any]]) -> Optional[RedTeamPlanSpec]:
+    if not settings.openai_api_key or not hotspots:
+        return None
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_openai import ChatOpenAI
+    except Exception:
+        return None
+    try:
+        model = ChatOpenAI(
+            model=settings.openai_model,
+            api_key=settings.openai_api_key,
+            temperature=0.2,
+        )
+        structured = model.with_structured_output(RedTeamPlanSpec)
+        return structured.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        RED_TEAM_SYSTEM_PROMPT
+                        + " Respond with structured output: a short summary (2-3 sentences) "
+                        "and 3-5 tasks. Each task must have stakeholder_name matching a hotspot "
+                        "name, a concrete imperative action, rationale, due_by as ISO date "
+                        "within 14 days, and priority p0/p1/p2."
+                    )
+                ),
+                HumanMessage(content=json.dumps(hotspots, indent=2)),
+            ]
+        )
+    except Exception:
+        return None
+
+
 def _llm_narrative(hotspots: list[dict[str, Any]]) -> Optional[str]:
     if not settings.openai_api_key or not hotspots:
         return None
@@ -189,27 +252,23 @@ def persist_red_team_snapshot(
     out.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
 
 
-def write_action_plan(narrative: str, hotspots: list[dict[str, Any]]) -> Path:
+def write_action_plan(
+    narrative: str,
+    hotspots: list[dict[str, Any]],
+    plan_spec: RedTeamPlanSpec,
+) -> Path:
+    task_dicts = spec_to_task_dicts(plan_spec, hotspots)
+    text = build_markdown_file(
+        summary=plan_spec.summary.strip()
+        or f"Pathfinder action plan — {len(hotspots)} hotspot(s).",
+        narrative=narrative.strip(),
+        hotspots=hotspots,
+        task_dicts=task_dicts,
+    )
     action_dir = settings.vault / "action_plans"
     action_dir.mkdir(parents=True, exist_ok=True)
     path = action_dir / f"Pathfinder-Action-Plan-{date.today().isoformat()}.md"
-    body = (
-        "---\n"
-        f"generated_at: \"{vault.now_iso()}\"\n"
-        f"hotspot_count: {len(hotspots)}\n"
-        "---\n\n"
-        "# Pathfinder Action Plan\n\n"
-        f"Generated {vault.now_iso()} — {len(hotspots)} institutional inertia hotspot(s).\n\n"
-        "## Hotspots\n\n"
-    )
-    for hotspot in hotspots:
-        body += (
-            f"- **{hotspot['name']}** — influence {hotspot['influence']:.2f}, "
-            f"telemetry {hotspot['telemetry']:.2f} on {hotspot['system_name']}\n"
-        )
-    body += "\n## Recommendation\n\n"
-    body += narrative.strip() + "\n"
-    path.write_text(body, encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -229,21 +288,34 @@ def build_graph():
 
     def node_red_team(state: AgentState) -> AgentState:
         hotspots = state.get("entities", [])
+        plan_spec = _llm_structured_plan(hotspots)
+        if not plan_spec or not plan_spec.tasks:
+            plan_spec = _heuristic_plan_spec(hotspots)
         narrative = _llm_narrative(hotspots)
         if not narrative:
             narrative = "\n\n".join(_heuristic_narrative(h) for h in hotspots) or (
                 "No hotspots detected. Graph is healthy relative to current thresholds."
             )
         state["reconciliation_plan"] = narrative
+        state["structured_plan"] = plan_spec.model_dump()
         state["conflict_detected"] = bool(hotspots)
         return state
 
     def node_write(state: AgentState) -> AgentState:
         hotspots = state.get("entities", [])
         narrative = state.get("reconciliation_plan", "")
+        raw_spec = state.get("structured_plan")
+        plan_spec: Optional[RedTeamPlanSpec] = None
+        if raw_spec:
+            try:
+                plan_spec = RedTeamPlanSpec.model_validate(raw_spec)
+            except Exception:
+                plan_spec = None
+        if hotspots and not plan_spec:
+            plan_spec = _heuristic_plan_spec(hotspots)
         plan_path: Optional[Path] = None
-        if hotspots:
-            plan_path = write_action_plan(narrative, hotspots)
+        if hotspots and plan_spec:
+            plan_path = write_action_plan(narrative, hotspots, plan_spec)
             state["raw_input"] = str(plan_path)
         persist_red_team_snapshot(hotspots, plan_path)
         return state

@@ -211,6 +211,17 @@ export type TodayGhostRow = {
   influence_score?: number;
 };
 
+export type TodayOpenTask = {
+  plan_path: string;
+  idx: number;
+  action: string;
+  rationale: string;
+  due_by: string;
+  priority: string;
+  stakeholder_id: string;
+  stakeholder_name: string;
+};
+
 export type TodayPayload = {
   stale_days: number;
   last_red_team_at: string | null;
@@ -219,6 +230,20 @@ export type TodayPayload = {
   at_risk: TodayHotspot[];
   stale: TodayStaleRow[];
   ghost_nodes: TodayGhostRow[];
+  open_tasks: TodayOpenTask[];
+};
+
+export type ActionPlanTaskPatchBody = {
+  path: string;
+  idx: number;
+  status: "todo" | "done" | "skipped";
+};
+
+export type ActionPlanTaskPatchResponse = {
+  path: string;
+  idx: number;
+  status: string;
+  tasks: unknown[];
 };
 
 export const api = {
@@ -245,4 +270,6 @@ export const api = {
   archiveStakeholder: (id: string) =>
     deleteJson<ArchiveResponse>(`/stakeholders/${encodeURIComponent(id)}`),
   today: () => getJson<TodayPayload>("/today"),
+  patchActionPlanTask: (body: ActionPlanTaskPatchBody) =>
+    patchJson<ActionPlanTaskPatchResponse>("/action-plans/task", body),
 };

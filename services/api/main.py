@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import obsidian_to_neo4j, today as today_mod, vault
+from . import action_plans, obsidian_to_neo4j, today as today_mod, vault
 from .config import settings
 from .ledger_processor import router as ledger_router
 
@@ -38,6 +38,14 @@ class NotesBody(BaseModel):
 
 class MergeBody(BaseModel):
     target_id: str
+
+
+class ActionPlanTaskPatch(BaseModel):
+    """Toggle a structured task checkbox on an action plan note."""
+
+    path: str = Field(description="Path relative to vault, e.g. action_plans/Pathfinder-Action-Plan-2026-04-19.md")
+    idx: int = Field(ge=0)
+    status: Literal["todo", "done", "skipped"]
 
 
 def _serialize_detail(note: vault.StakeholderNote) -> dict[str, Any]:
@@ -226,6 +234,17 @@ def list_conflicts(limit: int = Query(default=50, ge=1, le=500)) -> list[dict[st
             }
         )
     return items
+
+
+@app.patch("/action-plans/task")
+def patch_action_plan_task(body: ActionPlanTaskPatch) -> dict[str, Any]:
+    """Update task status in YAML and sync the ## Tasks markdown checkboxes."""
+    try:
+        return action_plans.update_task_status(body.path, body.idx, body.status)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="action plan not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/action-plans")
