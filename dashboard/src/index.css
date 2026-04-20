@@ -17,3 +17,58 @@ body {
 code, pre {
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
+
+/* ─── Form primitives shared by the Capture tab (and future forms) ─── */
+
+.input {
+  background: #1a2035;
+  border: 1px solid #2a3650;
+  border-radius: 6px;
+  color: #e8ecf4;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.input::placeholder {
+  color: #5a6580;
+}
+
+.input:hover {
+  border-color: #3a4660;
+}
+
+.input:focus {
+  border-color: #3b82f6;
+  background: #1e2540;
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-compact {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #e8ecf4;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  padding: 4px 6px;
+  outline: none;
+  width: 100%;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.input-compact:hover,
+.input-compact:focus {
+  background: #1a2035;
+  border-color: #2a3650;
+}
+
+.input-compact:focus {
+  border-color: #3b82f6;
+}

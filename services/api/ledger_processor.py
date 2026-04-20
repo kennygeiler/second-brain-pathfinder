@@ -1,4 +1,13 @@
-"""Voice ledger ingestion: transcription -> Obsidian stakeholder notes."""
+"""Voice ledger ingestion: transcription -> Obsidian stakeholder notes.
+
+Two-step workflow:
+  - POST /ledger/preview  -> run extraction + sentiment check, NO disk writes.
+                             Used by the dashboard's "Dry Run" button so an FDE
+                             can review + correct entities before they land.
+  - POST /ledger          -> write vault notes. Accepts either a raw transcript
+                             (re-runs extraction) or entities_override (skips
+                             extraction and trusts the user's table).
+"""
 from __future__ import annotations
 
 import uuid
@@ -10,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from . import vault
 from .conflict_detector import check_conflict
-from .extraction import extract_entities
+from .extraction import ExtractedEntity, ExtractionResult, extract_entities
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
@@ -21,6 +30,13 @@ class LedgerPayload(BaseModel):
     source_type: str = Field(default="voice_ledger")
     timestamp: Optional[str] = None
     meeting_id: Optional[str] = None
+    participants: list[str] = Field(default_factory=list)
+    location: Optional[str] = None
+    note: Optional[str] = None  # free-text summary attached to lineage
+    # When supplied, extraction is skipped and these entities are trusted
+    # verbatim. Populated by the dashboard Capture flow after a Dry Run
+    # that the FDE has reviewed / edited.
+    entities_override: Optional[list[ExtractedEntity]] = None
 
 
 class LedgerResponse(BaseModel):
@@ -29,20 +45,56 @@ class LedgerResponse(BaseModel):
     conflicts: list[str]
 
 
+class ConflictPreview(BaseModel):
+    name: str
+    previous_sentiment: float
+    new_sentiment: float
+    delta: float
+    would_trigger: bool
+
+
+class PreviewResponse(BaseModel):
+    entities: list[ExtractedEntity]
+    overall_sentiment: float
+    confidence: float
+    conflict_previews: list[ConflictPreview]
+
+
 def _lineage_entry(payload: LedgerPayload) -> dict[str, Any]:
-    return {
+    entry: dict[str, Any] = {
         "type": payload.source_type,
         "id": payload.source_id or str(uuid.uuid4()),
         "timestamp": payload.timestamp or datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "meeting_id": payload.meeting_id,
     }
+    # Only emit optional metadata when set — keeps YAML tidy.
+    if payload.meeting_id:
+        entry["meeting_id"] = payload.meeting_id
+    if payload.participants:
+        entry["participants"] = list(payload.participants)
+    if payload.location:
+        entry["location"] = payload.location
+    if payload.note:
+        entry["note"] = payload.note
+    return entry
+
+
+def _resolve_extraction(payload: LedgerPayload) -> ExtractionResult:
+    """Either use the user-edited entities verbatim or run the extractor."""
+    if payload.entities_override is not None:
+        # User confirmed these in the Dry-Run table. Confidence=1 (manual), and
+        # overall_sentiment is the mean of the entities' sentiment so downstream
+        # consumers still get a number.
+        ents = list(payload.entities_override)
+        mean = sum(e.sentiment for e in ents) / len(ents) if ents else 0.5
+        return ExtractionResult(entities=ents, overall_sentiment=mean, confidence=1.0)
+    return extract_entities(payload.transcription)
 
 
 def process_transcription(payload: LedgerPayload) -> LedgerResponse:
-    if not payload.transcription.strip():
+    if not payload.transcription.strip() and payload.entities_override is None:
         raise HTTPException(status_code=400, detail="transcription is empty")
 
-    extraction = extract_entities(payload.transcription)
+    extraction = _resolve_extraction(payload)
     lineage = _lineage_entry(payload)
 
     files_touched: list[str] = []
@@ -100,6 +152,53 @@ def process_transcription(payload: LedgerPayload) -> LedgerResponse:
     )
 
 
+def preview_transcription(payload: LedgerPayload) -> PreviewResponse:
+    """Run extraction + sentiment comparison, but do NOT touch the vault.
+
+    Mirrors process_transcription's entity resolution so the Dry-Run table
+    in the dashboard reflects exactly what a real commit would write.
+    """
+    if not payload.transcription.strip() and payload.entities_override is None:
+        raise HTTPException(status_code=400, detail="transcription is empty")
+
+    extraction = _resolve_extraction(payload)
+
+    # Conflict threshold lives with the detector; mirror its default here so
+    # the UI highlights the same rows the commit path would flag.
+    threshold = 0.5
+    conflict_previews: list[ConflictPreview] = []
+    for entity in extraction.entities:
+        existing = vault.find_by_name(entity.name)
+        if existing is None:
+            continue
+        prev = existing.data.get("sentiment_vector")
+        if prev is None:
+            continue
+        prev_f = float(prev)
+        delta = abs(float(entity.sentiment) - prev_f)
+        conflict_previews.append(
+            ConflictPreview(
+                name=entity.name,
+                previous_sentiment=prev_f,
+                new_sentiment=float(entity.sentiment),
+                delta=delta,
+                would_trigger=delta > threshold,
+            )
+        )
+
+    return PreviewResponse(
+        entities=list(extraction.entities),
+        overall_sentiment=extraction.overall_sentiment,
+        confidence=extraction.confidence,
+        conflict_previews=conflict_previews,
+    )
+
+
 @router.post("", response_model=LedgerResponse)
 def ingest_ledger(payload: LedgerPayload) -> LedgerResponse:
     return process_transcription(payload)
+
+
+@router.post("/preview", response_model=PreviewResponse)
+def preview_ledger(payload: LedgerPayload) -> PreviewResponse:
+    return preview_transcription(payload)

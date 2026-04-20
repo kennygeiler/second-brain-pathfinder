@@ -4,6 +4,7 @@ import {
   Compass,
   Gauge,
   LayoutGrid,
+  Mic,
   Network,
   RefreshCw,
   Server,
@@ -15,10 +16,12 @@ import type {
   ActionPlan,
   Conflict,
   GraphSnapshot,
+  LedgerResponse,
   RedTeamResult,
   Stakeholder,
   StakeholderDetail,
 } from "./api";
+import CaptureTab from "./pencil/CaptureTab";
 import CityIntelligenceMap from "./pencil/CityIntelligenceMap";
 import CityNavigationMap from "./pencil/CityNavigationMap";
 import StakeholderAuditDashboard from "./pencil/StakeholderAuditDashboard";
@@ -26,10 +29,11 @@ import ExecutiveHealthMatrix from "./pencil/ExecutiveHealthMatrix";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-type TabId = "overview" | "matrix" | "audit" | "intel" | "nav";
+type TabId = "overview" | "capture" | "matrix" | "audit" | "intel" | "nav";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview",         icon: LayoutGrid },
+  { id: "capture",  label: "Capture",          icon: Mic },
   { id: "matrix",   label: "Health Matrix",    icon: Gauge },
   { id: "audit",    label: "Stakeholder",      icon: Activity },
   { id: "intel",    label: "Risk Intel",       icon: Network },
@@ -49,6 +53,7 @@ export function App() {
   const [pivotState, setPivotState] = useState<"idle" | "running" | "error">("idle");
   const [pivotResult, setPivotResult] = useState<RedTeamResult | null>(null);
   const [pivotError, setPivotError] = useState<string | null>(null);
+  const [captureFlash, setCaptureFlash] = useState<LedgerResponse | null>(null);
 
   async function runPivot() {
     if (pivotState === "running") return;
@@ -161,6 +166,28 @@ export function App() {
         </div>
       )}
 
+      {captureFlash && (
+        <div className="flex items-center gap-3 px-6 py-2" style={{ background: "#22C55E15", borderBottom: "1px solid #22C55E40" }}>
+          <Sparkles size={14} color="#22C55E" />
+          <p className="flex-1 font-mono text-xs" style={{ color: "#86EFAC" }}>
+            Captured · {captureFlash.files_touched.length} note{captureFlash.files_touched.length === 1 ? "" : "s"} written
+            {captureFlash.conflicts.length > 0 && (
+              <span style={{ color: "#FCA5A5" }}> · {captureFlash.conflicts.length} conflict(s) flagged</span>
+            )}
+          </p>
+          <button
+            onClick={() => setTab("overview")}
+            className="px-2 py-0.5 rounded font-mono text-xs"
+            style={{ background: "#1F2A40", color: "#86EFAC", border: "1px solid #22C55E40" }}
+          >
+            OVERVIEW
+          </button>
+          <button onClick={() => setCaptureFlash(null)} style={{ color: "#86EFAC" }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {pivotState === "idle" && pivotResult && (
         <div className="flex items-center gap-3 px-6 py-2" style={{ background: "#22C55E15", borderBottom: "1px solid #22C55E40" }}>
           <Sparkles size={14} color="#22C55E" />
@@ -201,6 +228,14 @@ export function App() {
             onSelect={(id) => {
               setSelectedId(id);
               setTab("audit");
+            }}
+          />
+        )}
+        {tab === "capture" && (
+          <CaptureTab
+            onCommitted={(result) => {
+              setCaptureFlash(result);
+              void load();
             }}
           />
         )}

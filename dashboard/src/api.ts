@@ -63,6 +63,55 @@ export type GraphSnapshot = {
   edges: GraphEdge[];
 };
 
+export type ExtractedEntity = {
+  name: string;
+  type: string;
+  role?: string | null;
+  agency?: string | null;
+  blockers: string[];
+  sentiment: number;    // 0-1
+  influence: number;    // 0-1
+};
+
+export type LedgerPayload = {
+  transcription: string;
+  source_id?: string | null;
+  source_type?: string;
+  timestamp?: string | null;
+  meeting_id?: string | null;
+  participants?: string[];
+  location?: string | null;
+  note?: string | null;
+  entities_override?: ExtractedEntity[] | null;
+};
+
+export type ConflictPreview = {
+  name: string;
+  previous_sentiment: number;
+  new_sentiment: number;
+  delta: number;
+  would_trigger: boolean;
+};
+
+export type PreviewResponse = {
+  entities: ExtractedEntity[];
+  overall_sentiment: number;
+  confidence: number;
+  conflict_previews: ConflictPreview[];
+};
+
+export type LedgerResponse = {
+  files_touched: string[];
+  entities: Array<{
+    id: string;
+    name: string;
+    type?: string;
+    sentiment_vector?: number;
+    confidence_score?: number;
+  }>;
+  conflicts: string[];
+};
+
 const BASE = "/api";
 
 async function getJson<T>(path: string): Promise<T> {
@@ -81,10 +130,23 @@ export type RedTeamResult = {
   hotspot_names: string[];
 };
 
-async function postJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, { method: "POST" });
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const init: RequestInit = { method: "POST" };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  const response = await fetch(`${BASE}${path}`, init);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    // Surface FastAPI's validation detail if we can decode it
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const data = await response.json();
+      if (data?.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    } catch {
+      // fall through
+    }
+    throw new Error(detail);
   }
   return (await response.json()) as T;
 }
@@ -97,4 +159,8 @@ export const api = {
   actionPlans: () => getJson<ActionPlan[]>("/action-plans"),
   graph: () => getJson<GraphSnapshot>("/graph"),
   redTeam: () => postJson<RedTeamResult>("/red-team"),
+  previewLedger: (payload: LedgerPayload) =>
+    postJson<PreviewResponse>("/ledger/preview", payload),
+  commitLedger: (payload: LedgerPayload) =>
+    postJson<LedgerResponse>("/ledger", payload),
 };
