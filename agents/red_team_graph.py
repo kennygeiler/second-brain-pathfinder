@@ -157,6 +157,38 @@ def _llm_narrative(hotspots: list[dict[str, Any]]) -> Optional[str]:
     return getattr(response, "content", None)
 
 
+def persist_red_team_snapshot(
+    hotspots: list[dict[str, Any]], plan_path: Optional[Path]
+) -> None:
+    """Write machine-readable state for the Today view + external notifications."""
+    state_dir = settings.vault / ".state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    rel_plan = ""
+    if plan_path is not None:
+        try:
+            rel_plan = str(plan_path.resolve().relative_to(settings.vault))
+        except ValueError:
+            rel_plan = str(plan_path)
+    snapshot: dict[str, Any] = {
+        "run_at": vault.now_iso(),
+        "plan_path": rel_plan or None,
+        "hotspots": [
+            {
+                "id": h.get("id"),
+                "name": h.get("name"),
+                "influence": h.get("influence"),
+                "usage": h.get("telemetry"),
+                "sentiment": h.get("sentiment"),
+                "system_name": h.get("system_name"),
+                "reason": "high influence, low telemetry",
+            }
+            for h in hotspots
+        ],
+    }
+    out = state_dir / "last_red_team.json"
+    out.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+
+
 def write_action_plan(narrative: str, hotspots: list[dict[str, Any]]) -> Path:
     action_dir = settings.vault / "action_plans"
     action_dir.mkdir(parents=True, exist_ok=True)
@@ -209,9 +241,11 @@ def build_graph():
     def node_write(state: AgentState) -> AgentState:
         hotspots = state.get("entities", [])
         narrative = state.get("reconciliation_plan", "")
+        plan_path: Optional[Path] = None
         if hotspots:
-            path = write_action_plan(narrative, hotspots)
-            state["raw_input"] = str(path)
+            plan_path = write_action_plan(narrative, hotspots)
+            state["raw_input"] = str(plan_path)
+        persist_red_team_snapshot(hotspots, plan_path)
         return state
 
     try:

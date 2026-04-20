@@ -178,6 +178,49 @@ export type ArchiveResponse = {
   archived_to: string;
 };
 
+export type TodayConflictRow = {
+  path: string;
+  entity_id: string | null;
+  stakeholder_name?: unknown;
+  created: string;
+  preview: string;
+};
+
+export type TodayHotspot = {
+  id?: string;
+  name?: string;
+  influence?: number;
+  usage?: number;
+  sentiment?: number;
+  system_name?: string;
+  reason?: string;
+};
+
+export type TodayStaleRow = {
+  id: string;
+  name: string;
+  type?: string;
+  days_since_contact: number;
+  last_contact_at: string;
+};
+
+export type TodayGhostRow = {
+  id: string;
+  name: string;
+  type?: string;
+  influence_score?: number;
+};
+
+export type TodayPayload = {
+  stale_days: number;
+  last_red_team_at: string | null;
+  plan_path: string | null;
+  conflicts: TodayConflictRow[];
+  at_risk: TodayHotspot[];
+  stale: TodayStaleRow[];
+  ghost_nodes: TodayGhostRow[];
+};
+
 export const api = {
   stakeholders: () => getJson<Stakeholder[]>("/stakeholders"),
   stakeholder: (id: string) =>
@@ -201,4 +244,5 @@ export const api = {
     ),
   archiveStakeholder: (id: string) =>
     deleteJson<ArchiveResponse>(`/stakeholders/${encodeURIComponent(id)}`),
+  today: () => getJson<TodayPayload>("/today"),
 };

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
 
+    # Today view: stakeholders with no voice/email/meeting touch in this many days
+    stale_days: int = Field(default=30)
+
     @property
     def vault(self) -> Path:
         return self.vault_path.expanduser().resolve()

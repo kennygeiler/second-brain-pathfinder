@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
+  Clock,
   Compass,
+  Flame,
   Gauge,
+  Ghost,
   LayoutGrid,
   Mic,
   Network,
@@ -20,6 +24,7 @@ import type {
   RedTeamResult,
   Stakeholder,
   StakeholderDetail,
+  TodayPayload,
 } from "./api";
 import CaptureTab from "./pencil/CaptureTab";
 import CityIntelligenceMap from "./pencil/CityIntelligenceMap";
@@ -30,10 +35,10 @@ import CommandPalette from "./components/CommandPalette";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-type TabId = "overview" | "capture" | "matrix" | "audit" | "intel" | "nav";
+type TabId = "today" | "capture" | "matrix" | "audit" | "intel" | "nav";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "overview", label: "Overview",         icon: LayoutGrid },
+  { id: "today", label: "Today",              icon: LayoutGrid },
   { id: "capture",  label: "Capture",          icon: Mic },
   { id: "matrix",   label: "Health Matrix",    icon: Gauge },
   { id: "audit",    label: "Stakeholder",      icon: Activity },
@@ -48,7 +53,7 @@ export function App() {
   const [graph, setGraph] = useState<GraphSnapshot | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>("today");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<StakeholderDetail | null>(null);
   const [pivotState, setPivotState] = useState<"idle" | "running" | "error">("idle");
@@ -56,6 +61,7 @@ export function App() {
   const [pivotError, setPivotError] = useState<string | null>(null);
   const [captureFlash, setCaptureFlash] = useState<LedgerResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [today, setToday] = useState<TodayPayload | null>(null);
 
   async function runPivot() {
     if (pivotState === "running") return;
@@ -75,16 +81,18 @@ export function App() {
   async function load() {
     setState("loading");
     try {
-      const [s, c, p, g] = await Promise.all([
+      const [s, c, p, g, t] = await Promise.all([
         api.stakeholders(),
         api.conflicts(),
         api.actionPlans(),
         api.graph(),
+        api.today(),
       ]);
       setStakeholders(s);
       setConflicts(c);
       setPlans(p);
       setGraph(g);
+      setToday(t);
       setState("ready");
       if (!selectedId && s.length > 0) setSelectedId(s[0].id);
     } catch (err) {
@@ -192,11 +200,11 @@ export function App() {
             )}
           </p>
           <button
-            onClick={() => setTab("overview")}
+            onClick={() => setTab("today")}
             className="px-2 py-0.5 rounded font-mono text-xs"
             style={{ background: "#1F2A40", color: "#86EFAC", border: "1px solid #22C55E40" }}
           >
-            OVERVIEW
+            TODAY
           </button>
           <button onClick={() => setCaptureFlash(null)} style={{ color: "#86EFAC" }}>
             <X size={14} />
@@ -220,7 +228,7 @@ export function App() {
             )}
           </p>
           <button
-            onClick={() => setTab("overview")}
+            onClick={() => setTab("today")}
             className="px-2 py-0.5 rounded font-mono text-xs"
             style={{ background: "#1F2A40", color: "#86EFAC", border: "1px solid #22C55E40" }}
           >
@@ -233,18 +241,21 @@ export function App() {
       )}
 
       <div className="flex-1 overflow-hidden">
-        {tab === "overview" && (
-          <Overview
+        {tab === "today" && (
+          <TodayView
+            today={today}
             stakeholders={stakeholders}
             conflicts={conflicts}
             plans={plans}
             graph={graph}
             loading={state === "loading"}
             selectedId={selectedId}
-            onSelect={(id) => {
+            onSelectStakeholder={(id) => {
               setSelectedId(id);
               setTab("audit");
             }}
+            onRunRedTeam={() => void runPivot()}
+            pivotRunning={pivotState === "running"}
           />
         )}
         {tab === "capture" && (
@@ -325,7 +336,7 @@ export function App() {
             setSelectedId(s.id);
             setTab("audit");
           } else if (s.kind === "conflict") {
-            // Jump to the stakeholder implicated by the conflict, if any, else the overview.
+            // Jump to the stakeholder implicated by the conflict, if any, else Today.
             const conflict = conflicts.find((c) => c.path === s.path);
             const meta = conflict?.metadata as Record<string, unknown> | undefined;
             const sid = typeof meta?.stakeholder === "string" ? meta.stakeholder : null;
@@ -333,10 +344,10 @@ export function App() {
               setSelectedId(sid);
               setTab("audit");
             } else {
-              setTab("overview");
+              setTab("today");
             }
           } else if (s.kind === "plan") {
-            setTab("overview");
+            setTab("today");
           }
         }}
       />
@@ -461,21 +472,95 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ok
   );
 }
 
-// ─── Overview tab ─────────────────────────────────────────────────────────────
+// ─── Today tab (Day 5) ───────────────────────────────────────────────────────
 
-function Overview(props: {
+function formatRelativeIso(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const diff = Date.now() - t;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 14) return `${days}d ago`;
+  return new Date(t).toLocaleDateString();
+}
+
+function TodayView(props: {
+  today: TodayPayload | null;
   stakeholders: Stakeholder[];
   conflicts: Conflict[];
   plans: ActionPlan[];
   graph: GraphSnapshot | null;
   loading: boolean;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelectStakeholder: (id: string) => void;
+  onRunRedTeam: () => void;
+  pivotRunning: boolean;
 }) {
+  const t = props.today;
+  const hasPriority =
+    t &&
+    (t.conflicts.length > 0 ||
+      t.at_risk.length > 0 ||
+      t.stale.length > 0 ||
+      t.ghost_nodes.length > 0);
+
   return (
     <div className="h-full w-full overflow-y-auto" style={{ background: "#0A0E17" }}>
       <div className="mx-auto max-w-7xl px-8 py-10 flex flex-col gap-8">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1
+              className="font-mono font-bold text-lg tracking-widest"
+              style={{ color: "#E8ECF4", letterSpacing: "0.12em" }}
+            >
+              TODAY ·{" "}
+              {new Date().toLocaleDateString(undefined, {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </h1>
+            <p className="font-mono text-xs mt-2" style={{ color: "#5A6580" }}>
+              Last Red Team:{" "}
+              <span style={{ color: "#8892A8" }}>
+                {t?.last_red_team_at ? formatRelativeIso(t.last_red_team_at) : "never"}
+              </span>
+              {t?.plan_path && (
+                <>
+                  {" · "}
+                  <code style={{ color: "#E8ECF4" }}>{t.plan_path}</code>
+                </>
+              )}
+            </p>
+            {t != null && (
+              <p className="font-mono text-[11px] mt-1" style={{ color: "#5A6580" }}>
+                Stale threshold: {t.stale_days} days without voice / email / meeting touch (override with{" "}
+                <code style={{ color: "#8892A8" }}>STALE_DAYS</code> in <code style={{ color: "#8892A8" }}>.env</code>)
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={props.onRunRedTeam}
+            disabled={props.pivotRunning}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-md font-mono text-xs font-semibold tracking-widest shrink-0"
+            style={{
+              background: props.pivotRunning ? "#1F2A40" : "#F59E0B",
+              color: props.pivotRunning ? "#5A6580" : "#0A0E17",
+              cursor: props.pivotRunning ? "wait" : "pointer",
+            }}
+          >
+            <Sparkles size={14} className={props.pivotRunning ? "animate-pulse" : undefined} />
+            {props.pivotRunning ? "RUNNING…" : "RUN RED TEAM"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard label="STAKEHOLDERS" value={props.stakeholders.length.toString()} accent="#3B82F6" hint="tracked in vault" />
           <MetricCard
             label="OPEN CONFLICTS"
@@ -497,20 +582,152 @@ function Overview(props: {
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        {props.loading && !t && (
+          <p className="font-mono text-xs" style={{ color: "#5A6580" }}>
+            Loading Today…
+          </p>
+        )}
+
+        {!props.loading && t && !hasPriority && (
+          <EmptyState
+            title="No urgent items — nice."
+            body="When conflicts fire, Red Team finds inertia hotspots, contacts go stale, or cold-start ghosts linger, they will stack here."
+          />
+        )}
+
+        {t && t.conflicts.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={AlertTriangle} label="URGENT — OPEN CONFLICTS" accent="#F59E0B" />
+            <div className="flex flex-col gap-2">
+              {t.conflicts.map((row) => (
+                <button
+                  key={row.path}
+                  type="button"
+                  onClick={() => row.entity_id && props.onSelectStakeholder(row.entity_id)}
+                  className="text-left px-3 py-2.5 rounded-md transition-colors"
+                  style={{
+                    background: "#1A2035",
+                    border: "1px solid #1E2A3E",
+                    cursor: row.entity_id ? "pointer" : "default",
+                    opacity: row.entity_id ? 1 : 0.85,
+                  }}
+                >
+                  <p className="font-mono font-semibold text-xs" style={{ color: "#F59E0B" }}>
+                    {String(row.stakeholder_name ?? row.path)}
+                  </p>
+                  <p className="font-mono text-[11px] mt-0.5" style={{ color: "#5A6580" }}>
+                    {row.created ? formatRelativeIso(row.created) : "—"} · {row.path}
+                  </p>
+                  <p className="mt-1 font-sans text-xs" style={{ color: "#8892A8", lineHeight: 1.5 }}>
+                    {row.preview}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {t && t.at_risk.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={Flame} label="AT RISK — INSTITUTIONAL INERTIA (LAST RED TEAM)" accent="#EF4444" />
+            <div className="flex flex-col gap-2">
+              {t.at_risk.map((h, i) => (
+                <button
+                  key={`${h.id ?? h.name}-${i}`}
+                  type="button"
+                  onClick={() => typeof h.id === "string" && props.onSelectStakeholder(h.id)}
+                  className="text-left px-3 py-2.5 rounded-md"
+                  style={{
+                    background: "#1A2035",
+                    border: "1px solid #7F1D1D60",
+                    cursor: h.id ? "pointer" : "default",
+                  }}
+                >
+                  <p className="font-mono font-semibold text-sm" style={{ color: "#E8ECF4" }}>
+                    {h.name ?? "—"}
+                  </p>
+                  <p className="font-mono text-[11px] mt-1" style={{ color: "#8892A8" }}>
+                    infl {(typeof h.influence === "number" ? h.influence * 10 : 0).toFixed(1)}/10 · usage{" "}
+                    {(typeof h.usage === "number" ? h.usage * 10 : 0).toFixed(1)}/10 · {String(h.system_name ?? "system")}
+                  </p>
+                  <p className="font-sans text-xs mt-1" style={{ color: "#5A6580" }}>
+                    {h.reason ?? "high influence, low telemetry"}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {t && t.stale.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={Clock} label={`STALE — NO CONTACT > ${t.stale_days} DAYS`} accent="#A855F7" />
+            <div className="flex flex-col gap-2">
+              {t.stale.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => props.onSelectStakeholder(row.id)}
+                  className="text-left px-3 py-2.5 rounded-md"
+                  style={{ background: "#1A2035", border: "1px solid #1E2A3E", cursor: "pointer" }}
+                >
+                  <span className="font-mono font-semibold text-sm" style={{ color: "#E8ECF4" }}>
+                    {row.name}
+                  </span>
+                  <span className="font-mono text-[11px] ml-2" style={{ color: "#A855F7" }}>
+                    {row.days_since_contact}d since touch
+                  </span>
+                  <p className="font-mono text-[11px] mt-0.5" style={{ color: "#5A6580" }}>
+                    {row.type ?? "—"} · last {formatRelativeIso(row.last_contact_at)}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {t && t.ghost_nodes.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={Ghost} label="GHOST NODES — VERIFY OR MERGE" accent="#F59E0B" />
+            <div className="flex flex-col gap-2">
+              {t.ghost_nodes.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => props.onSelectStakeholder(row.id)}
+                  className="text-left px-3 py-2.5 rounded-md"
+                  style={{ background: "#1A2035", border: "1px solid #1E2A3E", cursor: "pointer" }}
+                >
+                  <span className="font-mono font-semibold text-sm" style={{ color: "#E8ECF4" }}>
+                    {row.name}
+                  </span>
+                  <span className="font-mono text-[11px] ml-2" style={{ color: "#5A6580" }}>
+                    {row.type ?? "—"} · infl{" "}
+                    {row.influence_score != null ? (row.influence_score * 10).toFixed(1) : "—"}/10
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div
-            className="col-span-2 rounded-lg p-5 flex flex-col gap-3"
+            className="lg:col-span-2 rounded-lg p-5 flex flex-col gap-3"
             style={{ background: "#111827", border: "1px solid #2A3650" }}
           >
             <SectionHeader icon={Activity} label="LATEST STAKEHOLDERS" accent="#3B82F6" />
             {props.loading && !props.stakeholders.length ? (
-              <p className="font-mono text-xs" style={{ color: "#5A6580" }}>Loading vault…</p>
+              <p className="font-mono text-xs" style={{ color: "#5A6580" }}>
+                Loading vault…
+              </p>
             ) : props.stakeholders.length ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {props.stakeholders.slice(0, 8).map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => props.onSelect(s.id)}
+                    type="button"
+                    onClick={() => props.onSelectStakeholder(s.id)}
                     className="flex items-start gap-3 px-3 py-2.5 rounded-md text-left"
                     style={{
                       background: props.selectedId === s.id ? "#1F2A40" : "#1A2035",
@@ -550,10 +767,7 @@ function Overview(props: {
                 ))}
               </div>
             ) : (
-              <EmptyState
-                title="Vault is empty"
-                body={"Drop a transcription into inbox/ and run `make demo`."}
-              />
+              <EmptyState title="Vault is empty" body={"Drop a transcription into Capture or run `make demo`."} />
             )}
           </div>
 
@@ -578,17 +792,14 @@ function Overview(props: {
               label="GHOSTS"
               value={props.stakeholders.filter((s) => s.path?.toLowerCase().includes("ghost")).length}
               threshold={10}
-              hint="cold-start placeholders"
+              hint="cold-start placeholders (filename)"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div
-            className="rounded-lg p-5 flex flex-col gap-3"
-            style={{ background: "#111827", border: "1px solid #2A3650" }}
-          >
-            <SectionHeader icon={Network} label="CONFLICTS" accent="#F59E0B" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-8">
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={Network} label="CONFLICT FILES" accent="#F59E0B" />
             {props.conflicts.length ? (
               <div className="flex flex-col gap-2">
                 {props.conflicts.slice(0, 4).map((c) => (
@@ -614,10 +825,7 @@ function Overview(props: {
             )}
           </div>
 
-          <div
-            className="rounded-lg p-5 flex flex-col gap-3"
-            style={{ background: "#111827", border: "1px solid #2A3650" }}
-          >
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
             <SectionHeader icon={Compass} label="ACTION PLANS" accent="#3B82F6" />
             {props.plans.length ? (
               <div className="flex flex-col gap-2">
@@ -640,7 +848,7 @@ function Overview(props: {
                 ))}
               </div>
             ) : (
-              <EmptyState title="No plans yet" body="Run the Red Team to generate one." />
+              <EmptyState title="No plans yet" body="Run Red Team from this page or the Health Matrix." />
             )}
           </div>
         </div>

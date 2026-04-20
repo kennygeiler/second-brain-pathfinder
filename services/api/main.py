@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import obsidian_to_neo4j, vault
+from . import obsidian_to_neo4j, today as today_mod, vault
 from .config import settings
 from .ledger_processor import router as ledger_router
 
@@ -62,6 +62,12 @@ app.include_router(ledger_router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "vault": str(settings.vault)}
+
+
+@app.get("/today")
+def get_today() -> dict[str, Any]:
+    """Priority stack for the dashboard: conflicts, Red Team hotspots, stale, ghosts."""
+    return today_mod.build_today_payload(stale_days=settings.stale_days)
 
 
 @app.post("/sync")

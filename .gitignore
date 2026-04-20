@@ -19,3 +19,4 @@ vault/proposed/*
 !vault/proposed/.gitkeep
 vault/action_plans/*
 !vault/action_plans/.gitkeep
+vault/.state/
