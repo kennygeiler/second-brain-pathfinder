@@ -171,6 +171,82 @@ export type StakeholderPatch = {
   sentiment_vector?: number;   // 0..1
   technical_blockers?: string[];
   ghost?: boolean;
+  reports_to?: string;
+  department?: string;
+  org_unit?: string;
+  rank?: string;
+};
+
+export type ProgressSummary = {
+  as_of: string;
+  window_days: number;
+  totals: {
+    stakeholders: number;
+    open_conflicts: number;
+    at_risk_hotspots: number;
+    open_actions: number;
+    overdue_actions: number;
+  };
+  trends: {
+    open_conflicts_delta: number;
+    at_risk_hotspots_delta: number;
+    stale_contacts_delta: number;
+    action_completion_rate: number;
+    action_completion_rate_delta: number;
+    median_sentiment_shift: number;
+  };
+  health_score: {
+    value: number;
+    delta: number;
+    components: Record<string, number>;
+  };
+};
+
+export type ProgressTimelinePoint = { ts: string; value: number };
+export type ProgressTimeline = {
+  as_of: string;
+  window_days: number;
+  bucket: "day" | "week";
+  series: Record<string, ProgressTimelinePoint[]>;
+};
+
+export type StakeholderProgress = {
+  stakeholder_id: string;
+  name: string;
+  window_days: number;
+  current: {
+    influence: number;
+    sentiment: number;
+    days_since_contact: number;
+    open_conflicts: number;
+    open_actions: number;
+  };
+  delta: {
+    sentiment_30d: number;
+    influence_90d: number;
+    conflicts_30d: number;
+  };
+  timeline: {
+    sentiment: ProgressTimelinePoint[];
+    touches: Array<{ ts: string; kind: string; source_id: string }>;
+    actions: Array<{ ts: string; status: string; task_id: string }>;
+  };
+};
+
+export type ActionItem = {
+  id: string;
+  title: string;
+  stakeholder_id?: string;
+  system_id?: string;
+  priority: "p0" | "p1" | "p2";
+  owner?: string;
+  due_by?: string;
+  status: "todo" | "in_progress" | "done" | "skipped";
+  outcome_note?: string;
+  source?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 };
 
 export type ArchiveResponse = {
@@ -201,7 +277,8 @@ export type TodayStaleRow = {
   name: string;
   type?: string;
   days_since_contact: number;
-  last_contact_at: string;
+  last_contact_at: string | null;
+  never_contacted?: boolean;
 };
 
 export type TodayGhostRow = {
@@ -300,4 +377,22 @@ export const api = {
     getJson<MomentsPayload>(year != null ? `/moments?year=${year}` : "/moments"),
   patchActionPlanTask: (body: ActionPlanTaskPatchBody) =>
     patchJson<ActionPlanTaskPatchResponse>("/action-plans/task", body),
+  progressSummary: (window = 30) =>
+    getJson<ProgressSummary>(`/progress/summary?window=${window}`),
+  progressTimeline: (window = 90, bucket: "day" | "week" = "week") =>
+    getJson<ProgressTimeline>(`/progress/timeline?window=${window}&bucket=${bucket}`),
+  stakeholderProgress: (id: string, window = 180) =>
+    getJson<StakeholderProgress>(`/stakeholders/${encodeURIComponent(id)}/progress?window=${window}`),
+  actions: (params?: { status?: string; owner?: string; stakeholder_id?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.owner) q.set("owner", params.owner);
+    if (params?.stakeholder_id) q.set("stakeholder_id", params.stakeholder_id);
+    const suffix = q.toString();
+    return getJson<ActionItem[]>(suffix ? `/actions?${suffix}` : "/actions");
+  },
+  createAction: (body: Omit<ActionItem, "id" | "created_at" | "updated_at"> & { title: string }) =>
+    postJson<ActionItem>("/actions", body),
+  patchAction: (id: string, body: Partial<ActionItem>) =>
+    patchJson<ActionItem>(`/actions/${encodeURIComponent(id)}`, body),
 };

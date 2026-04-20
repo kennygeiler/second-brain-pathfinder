@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from . import vault
-from .conflict_detector import check_conflict
+from .conflict_detector import CONFLICT_DELTA_THRESHOLD, check_conflict
 from .extraction import ExtractedEntity, ExtractionResult, extract_entities
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
@@ -163,9 +163,7 @@ def preview_transcription(payload: LedgerPayload) -> PreviewResponse:
 
     extraction = _resolve_extraction(payload)
 
-    # Conflict threshold lives with the detector; mirror its default here so
-    # the UI highlights the same rows the commit path would flag.
-    threshold = 0.5
+    threshold = CONFLICT_DELTA_THRESHOLD
     conflict_previews: list[ConflictPreview] = []
     for entity in extraction.entities:
         existing = vault.find_by_name(entity.name)

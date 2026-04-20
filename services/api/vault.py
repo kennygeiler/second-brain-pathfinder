@@ -128,6 +128,11 @@ def create_stakeholder_note(
     root = vault_root()
     path = root / f"{slugify(name)}.md"
     now = now_iso()
+    contact_ts = now
+    if source_lineage_entry and isinstance(source_lineage_entry, dict):
+        raw_ts = source_lineage_entry.get("timestamp")
+        if raw_ts:
+            contact_ts = str(raw_ts)
     metadata: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "name": name,
@@ -138,6 +143,8 @@ def create_stakeholder_note(
         "technical_blockers": [],
         "source_lineage": [source_lineage_entry] if source_lineage_entry else [],
         "last_updated": now,
+        "last_contact_at": contact_ts,
+        "last_profile_edit_at": now,
         "last_reconciled": now,
         "ghost": ghost,
     }
@@ -171,8 +178,10 @@ def update_note_from_extraction(
     lineage = list(data.get("source_lineage") or [])
     lineage.append(source_lineage_entry)
     data["source_lineage"] = lineage
-    data["last_updated"] = now_iso()
-    data["last_reconciled"] = now_iso()
+    now = now_iso()
+    data["last_updated"] = now
+    data["last_contact_at"] = now
+    data["last_reconciled"] = now
     save_note(note)
     return note
 
@@ -214,8 +223,10 @@ def patch_note(note: StakeholderNote, patch: dict[str, Any]) -> StakeholderNote:
         if key not in PATCHABLE_FIELDS:
             continue
         data[key] = value
-    data["last_reconciled"] = now_iso()
-    data["last_updated"] = now_iso()
+    now = now_iso()
+    data["last_reconciled"] = now
+    data["last_updated"] = now
+    data["last_profile_edit_at"] = now
     save_note(note)
     return note
 
@@ -223,7 +234,10 @@ def patch_note(note: StakeholderNote, patch: dict[str, Any]) -> StakeholderNote:
 def replace_body(note: StakeholderNote, body_md: str) -> StakeholderNote:
     """Replace the markdown body (YAML frontmatter preserved)."""
     note.post.content = body_md
-    note.data["last_reconciled"] = now_iso()
+    now = now_iso()
+    note.data["last_reconciled"] = now
+    note.data["last_updated"] = now
+    note.data["last_profile_edit_at"] = now
     save_note(note)
     return note
 

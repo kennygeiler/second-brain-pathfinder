@@ -1,6 +1,7 @@
 """Aggregate stakeholder lineage + conflicts + Red Team runs into calendar moments."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -99,15 +100,20 @@ def collect_moments(year: int) -> dict[str, Any]:
                 }
             )
 
-    red = load_last_red_team()
-    if red:
-        ra = _parse_ts(str(red.get("run_at") or ""))
-        if ra and ra.year == year:
-            plan_path = red.get("plan_path")
-            mid = "red-team-last"
+    runs_dir = settings.vault / ".state" / "red_team_runs"
+    if runs_dir.exists():
+        for p in runs_dir.glob("run-*.json"):
+            try:
+                payload = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            ra = _parse_ts(str(payload.get("run_at") or ""))
+            if not ra or ra.year != year:
+                continue
+            plan_path = payload.get("plan_path")
             moments.append(
                 {
-                    "id": mid,
+                    "id": f"red-{p.stem}",
                     "kind": "red_team",
                     "color": _legend_color("red_team"),
                     "at": ra.isoformat(timespec="seconds"),
@@ -119,6 +125,27 @@ def collect_moments(year: int) -> dict[str, Any]:
                     "plan_path": str(plan_path) if plan_path else "",
                 }
             )
+    else:
+        red = load_last_red_team()
+        if red:
+            ra = _parse_ts(str(red.get("run_at") or ""))
+            if ra and ra.year == year:
+                plan_path = red.get("plan_path")
+                mid = "red-team-last"
+                moments.append(
+                    {
+                        "id": mid,
+                        "kind": "red_team",
+                        "color": _legend_color("red_team"),
+                        "at": ra.isoformat(timespec="seconds"),
+                        "day": ra.date().isoformat(),
+                        "label": "Red Team run",
+                        "detail": str(plan_path or "Action plan generated"),
+                        "stakeholder_id": "",
+                        "stakeholder_name": "Red Team",
+                        "plan_path": str(plan_path) if plan_path else "",
+                    }
+                )
 
     moments.sort(key=lambda m: m["at"], reverse=True)
 

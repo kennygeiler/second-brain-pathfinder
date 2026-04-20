@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,7 +16,8 @@ def _conflict_path(note: vault.StakeholderNote) -> Path:
     conflicts = settings.vault / "conflicts"
     conflicts.mkdir(parents=True, exist_ok=True)
     slug = vault.slugify(note.name)
-    return conflicts / f"{slug}-CONFLICT-{date.today().isoformat()}.md"
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S%fZ")
+    return conflicts / f"{slug}-CONFLICT-{stamp}.md"
 
 
 def _reconciliation_question(name: str, prev: float, new: float) -> str:

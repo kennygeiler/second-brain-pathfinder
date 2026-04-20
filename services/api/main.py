@@ -11,7 +11,15 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import action_plans, moments as moments_mod, obsidian_to_neo4j, today as today_mod, vault
+from . import (
+    action_plans,
+    actions as actions_mod,
+    moments as moments_mod,
+    obsidian_to_neo4j,
+    progress as progress_mod,
+    today as today_mod,
+    vault,
+)
 from .config import settings
 from .ledger_processor import router as ledger_router
 
@@ -54,6 +62,29 @@ class ActionPlanTaskPatch(BaseModel):
     status: Literal["todo", "done", "skipped"]
 
 
+class ActionCreateBody(BaseModel):
+    title: str
+    stakeholder_id: Optional[str] = None
+    system_id: Optional[str] = None
+    priority: Literal["p0", "p1", "p2"] = "p1"
+    owner: Optional[str] = None
+    due_by: Optional[str] = None
+    status: Literal["todo", "in_progress", "done", "skipped"] = "todo"
+    outcome_note: Optional[str] = None
+    source: Optional[dict[str, Any]] = None
+    completed_at: Optional[str] = None
+
+
+class ActionPatchBody(BaseModel):
+    status: Optional[Literal["todo", "in_progress", "done", "skipped"]] = None
+    outcome_note: Optional[str] = None
+    owner: Optional[str] = None
+    due_by: Optional[str] = None
+    priority: Optional[Literal["p0", "p1", "p2"]] = None
+    title: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
 def _serialize_detail(note: vault.StakeholderNote) -> dict[str, Any]:
     return {
         "id": note.id,
@@ -90,6 +121,30 @@ def get_moments(year: Optional[int] = Query(default=None, ge=2000, le=2100)) -> 
     """Stakeholder lineage + conflicts + last Red Team run, bucketed by calendar day."""
     y = year if year is not None else datetime.now(timezone.utc).year
     return jsonable_encoder(moments_mod.collect_moments(y))
+
+
+@app.get("/progress/summary")
+def get_progress_summary(window: int = Query(default=30, ge=7, le=365)) -> dict[str, Any]:
+    return jsonable_encoder(progress_mod.summary(window))
+
+
+@app.get("/progress/timeline")
+def get_progress_timeline(
+    window: int = Query(default=90, ge=7, le=365),
+    bucket: Literal["day", "week"] = Query(default="week"),
+) -> dict[str, Any]:
+    return jsonable_encoder(progress_mod.timeline(window_days=window, bucket=bucket))
+
+
+@app.get("/stakeholders/{entity_id}/progress")
+def get_stakeholder_progress(
+    entity_id: str,
+    window: int = Query(default=180, ge=30, le=730),
+) -> dict[str, Any]:
+    payload = progress_mod.stakeholder_progress(entity_id, window_days=window)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="stakeholder not found")
+    return jsonable_encoder(payload)
 
 
 @app.post("/sync")
@@ -285,6 +340,43 @@ def list_action_plans(limit: int = Query(default=20, ge=1, le=200)) -> list[dict
     return jsonable_encoder(plans)
 
 
+@app.post("/actions")
+def create_action(body: ActionCreateBody) -> dict[str, Any]:
+    try:
+        return jsonable_encoder(actions_mod.create_action(settings.vault, body.model_dump(exclude_none=True)))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/actions/{action_id}")
+def patch_action(action_id: str, body: ActionPatchBody) -> dict[str, Any]:
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(status_code=400, detail="empty patch")
+    try:
+        return jsonable_encoder(actions_mod.patch_action(settings.vault, action_id, patch))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="action not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/actions")
+def list_actions(
+    status: Optional[str] = Query(default=None),
+    owner: Optional[str] = Query(default=None),
+    stakeholder_id: Optional[str] = Query(default=None),
+) -> list[dict[str, Any]]:
+    return jsonable_encoder(
+        actions_mod.list_actions(
+            settings.vault,
+            status=status,
+            owner=owner,
+            stakeholder_id=stakeholder_id,
+        )
+    )
+
+
 def _jsonify_graph_value(val: Any) -> Any:
     """Make Neo4j property values and nested structures JSON-serializable for FastAPI."""
     if val is None or isinstance(val, (str, int, float, bool)):
@@ -372,6 +464,65 @@ def graph_snapshot(limit: int = Query(default=200, ge=1, le=2000)) -> dict[str, 
         return {"source": "neo4j", "nodes": nodes, "edges": edges}
     except Exception:
         return _proposed_snapshot(limit)
+
+
+@app.get("/network/insights")
+def network_insights(
+    mode: Literal["org", "product", "combined"] = Query(default="combined"),
+    limit: int = Query(default=200, ge=1, le=2000),
+) -> dict[str, Any]:
+    graph = graph_snapshot(limit=limit)
+    edges = graph.get("edges") or []
+    org_types = {"REPORTS_TO", "MEMBER_OF"}
+    product_types = {"USES", "BLOCKS", "INFLUENCES"}
+    org_count = 0
+    friction = 0
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        rel = str(e.get("type") or "").upper()
+        if rel in org_types:
+            org_count += 1
+        if rel in product_types or rel == "BLOCKS":
+            friction += 1
+    findings: list[dict[str, Any]] = []
+    if org_count > 0:
+        findings.append(
+            {
+                "id": "finding-org-1",
+                "severity": "high" if org_count > 4 else "medium",
+                "title": "Org bottlenecks detected",
+                "why": f"{org_count} reporting/membership edges shape decision flow.",
+                "recommended_action": "Confirm escalation path and owner for the top bottleneck.",
+                "owner": "Account lead",
+                "due_by": "",
+            }
+        )
+    if friction > 0:
+        findings.append(
+            {
+                "id": "finding-prod-1",
+                "severity": "high" if friction > 3 else "medium",
+                "title": "Adoption friction cluster",
+                "why": f"{friction} product-friction edges indicate weak workflow adoption.",
+                "recommended_action": "Run one unblock session with the highest influence stakeholder.",
+                "owner": "FDE",
+                "due_by": "",
+            }
+        )
+    return jsonable_encoder(
+        {
+            "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": mode,
+            "graph": graph,
+            "metrics": {
+                "org_bottlenecks": org_count,
+                "adoption_friction_edges": friction,
+                "isolated_high_influence_nodes": 0,
+            },
+            "top_findings": findings,
+        }
+    )
 
 
 def _proposed_snapshot(limit: int) -> dict[str, Any]:

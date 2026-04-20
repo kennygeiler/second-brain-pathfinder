@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import frontmatter
 
-from . import action_plans, vault
+from . import action_plans, actions as actions_mod, vault
 from .config import settings
 
 CONTACT_SOURCE_TYPES = frozenset({"voice_ledger", "email", "meeting"})
@@ -26,10 +26,10 @@ def _parse_ts(raw: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _last_contact_at(note: vault.StakeholderNote) -> datetime:
-    """Best-effort 'last touch' time for staleness: max(contact lineage, last_updated)."""
+def _last_contact_at(note: vault.StakeholderNote) -> Optional[datetime]:
+    """Best-effort last contact timestamp based only on contact-derived events."""
     candidates: list[datetime] = []
-    lu = _parse_ts(note.data.get("last_updated"))
+    lu = _parse_ts(note.data.get("last_contact_at"))
     if lu:
         candidates.append(lu)
     for entry in note.data.get("source_lineage") or []:
@@ -41,7 +41,7 @@ def _last_contact_at(note: vault.StakeholderNote) -> datetime:
         if ts:
             candidates.append(ts)
     if not candidates:
-        return datetime.now(timezone.utc)
+        return None
     return max(candidates)
 
 
@@ -115,7 +115,12 @@ def build_today_payload(*, stale_days: int, conflict_limit: int = 10) -> dict[st
 
     for note in vault.iter_stakeholder_notes():
         last_c = _last_contact_at(note)
-        days = _days_between(last_c, now)
+        if last_c is None:
+            days = stale_days + 1
+            last_contact = None
+        else:
+            days = _days_between(last_c, now)
+            last_contact = last_c.isoformat(timespec="seconds")
         if days > stale_days:
             stale_out.append(
                 {
@@ -123,7 +128,8 @@ def build_today_payload(*, stale_days: int, conflict_limit: int = 10) -> dict[st
                     "name": note.name,
                     "type": note.data.get("type"),
                     "days_since_contact": days,
-                    "last_contact_at": last_c.isoformat(timespec="seconds"),
+                    "last_contact_at": last_contact,
+                    "never_contacted": last_c is None,
                 }
             )
         if is_ghost_stakeholder(note):
@@ -150,7 +156,27 @@ def build_today_payload(*, stale_days: int, conflict_limit: int = 10) -> dict[st
             if isinstance(h, dict):
                 at_risk.append(dict(h))
 
-    open_tasks = action_plans.collect_open_tasks(limit=40)
+    actions_open = [
+        a for a in actions_mod.list_actions(settings.vault)
+        if str(a.get("status") or "") in {"todo", "in_progress"}
+    ]
+    open_tasks = (
+        [
+            {
+                "plan_path": str(a.get("source", {}).get("ref") or ""),
+                "idx": i,
+                "action": str(a.get("title") or ""),
+                "rationale": str(a.get("outcome_note") or ""),
+                "due_by": str(a.get("due_by") or ""),
+                "priority": str(a.get("priority") or "p1"),
+                "stakeholder_id": str(a.get("stakeholder_id") or ""),
+                "stakeholder_name": "",
+            }
+            for i, a in enumerate(actions_open)
+        ]
+        if actions_open
+        else action_plans.collect_open_tasks(limit=40)
+    )
 
     return {
         "stale_days": stale_days,

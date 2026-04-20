@@ -16,14 +16,18 @@ import {
   RefreshCw,
   Server,
   Sparkles,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { api } from "./api";
 import type {
+  ActionItem,
   ActionPlan,
   Conflict,
   GraphSnapshot,
   LedgerResponse,
+  ProgressSummary,
+  ProgressTimeline,
   RedTeamResult,
   Stakeholder,
   StakeholderDetail,
@@ -31,7 +35,6 @@ import type {
 } from "./api";
 import CaptureTab from "./pencil/CaptureTab";
 import CityIntelligenceMap from "./pencil/CityIntelligenceMap";
-import CityNavigationMap from "./pencil/CityNavigationMap";
 import StakeholderAuditDashboard from "./pencil/StakeholderAuditDashboard";
 import ExecutiveHealthMatrix from "./pencil/ExecutiveHealthMatrix";
 import CommandPalette from "./components/CommandPalette";
@@ -39,16 +42,16 @@ import MomentsOverview from "./components/MomentsOverview";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-type TabId = "today" | "moments" | "capture" | "matrix" | "audit" | "intel" | "nav";
+type TabId = "today" | "progress" | "moments" | "capture" | "matrix" | "audit" | "intel";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "today", label: "Today",              icon: LayoutGrid },
+  { id: "progress", label: "Progress",        icon: TrendingUp },
   { id: "moments", label: "Moments",          icon: CalendarDays },
   { id: "capture",  label: "Capture",          icon: Mic },
   { id: "matrix",   label: "Health Matrix",    icon: Gauge },
   { id: "audit",    label: "Stakeholder",      icon: Activity },
-  { id: "intel",    label: "Risk Intel",       icon: Network },
-  { id: "nav",      label: "Pathfinder Map",   icon: Compass },
+  { id: "intel",    label: "Network",          icon: Network },
 ];
 
 export function App() {
@@ -67,6 +70,9 @@ export function App() {
   const [captureFlash, setCaptureFlash] = useState<LedgerResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [today, setToday] = useState<TodayPayload | null>(null);
+  const [progressSummary, setProgressSummary] = useState<ProgressSummary | null>(null);
+  const [progressTimeline, setProgressTimeline] = useState<ProgressTimeline | null>(null);
+  const [actions, setActions] = useState<ActionItem[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   async function runPivot() {
@@ -86,25 +92,34 @@ export function App() {
 
   async function load() {
     setState("loading");
-    try {
-      const [s, c, p, g, t] = await Promise.all([
-        api.stakeholders(),
-        api.conflicts(),
-        api.actionPlans(),
-        api.graph(),
-        api.today(),
-      ]);
-      setStakeholders(s);
-      setConflicts(c);
-      setPlans(p);
-      setGraph(g);
-      setToday(t);
+    setError(null);
+    const results = await Promise.allSettled([
+      api.stakeholders(),
+      api.conflicts(),
+      api.actionPlans(),
+      api.graph(),
+      api.today(),
+      api.progressSummary(),
+      api.progressTimeline(),
+      api.actions(),
+    ]);
+    const [sR, cR, pR, gR, tR, psR, ptR, aR] = results;
+    const failures: string[] = [];
+    if (sR.status === "fulfilled") setStakeholders(sR.value); else failures.push("stakeholders");
+    if (cR.status === "fulfilled") setConflicts(cR.value); else failures.push("conflicts");
+    if (pR.status === "fulfilled") setPlans(pR.value); else failures.push("action plans");
+    if (gR.status === "fulfilled") setGraph(gR.value); else failures.push("graph");
+    if (tR.status === "fulfilled") setToday(tR.value); else failures.push("today");
+    if (psR.status === "fulfilled") setProgressSummary(psR.value); else failures.push("progress");
+    if (ptR.status === "fulfilled") setProgressTimeline(ptR.value); else failures.push("progress timeline");
+    if (aR.status === "fulfilled") setActions(aR.value); else failures.push("actions");
+    setRefreshNonce((n) => n + 1);
+    if (!selectedId && sR.status === "fulfilled" && sR.value.length > 0) setSelectedId(sR.value[0].id);
+    if (failures.length) {
+      setError(`Failed panels: ${failures.join(", ")}`);
+      setState(failures.length === results.length ? "error" : "ready");
+    } else {
       setState("ready");
-      setRefreshNonce((n) => n + 1);
-      if (!selectedId && s.length > 0) setSelectedId(s[0].id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "unknown error");
-      setState("error");
     }
   }
 
@@ -255,6 +270,8 @@ export function App() {
             conflicts={conflicts}
             plans={plans}
             graph={graph}
+            progressSummary={progressSummary}
+            actions={actions}
             loading={state === "loading"}
             selectedId={selectedId}
             onSelectStakeholder={(id) => {
@@ -264,6 +281,13 @@ export function App() {
             onRunRedTeam={() => void runPivot()}
             pivotRunning={pivotState === "running"}
             onRefresh={() => void load()}
+          />
+        )}
+        {tab === "progress" && (
+          <ProgressView
+            summary={progressSummary}
+            timeline={progressTimeline}
+            loading={state === "loading"}
           />
         )}
         {tab === "moments" && (
@@ -322,17 +346,6 @@ export function App() {
           <CityIntelligenceMap
             graph={graph}
             conflicts={conflicts}
-            selectedId={selectedId}
-            onNodeClick={(id) => {
-              setSelectedId(id);
-              setTab("audit");
-            }}
-          />
-        )}
-        {tab === "nav" && (
-          <CityNavigationMap
-            graph={graph}
-            plans={plans}
             selectedId={selectedId}
             onNodeClick={(id) => {
               setSelectedId(id);
@@ -507,6 +520,8 @@ function formatRelativeIso(iso: string): string {
 
 function TodayView(props: {
   today: TodayPayload | null;
+  progressSummary: ProgressSummary | null;
+  actions: ActionItem[];
   stakeholders: Stakeholder[];
   conflicts: Conflict[];
   plans: ActionPlan[];
@@ -520,7 +535,7 @@ function TodayView(props: {
 }) {
   const [taskBusyKey, setTaskBusyKey] = useState<string | null>(null);
   const t = props.today;
-  const openTasks = t?.open_tasks ?? [];
+  const openTasks = props.actions.filter((a) => a.status === "todo" || a.status === "in_progress");
   const hasPriority =
     t &&
     (openTasks.length > 0 ||
@@ -582,24 +597,29 @@ function TodayView(props: {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard label="STAKEHOLDERS" value={props.stakeholders.length.toString()} accent="#3B82F6" hint="tracked in vault" />
           <MetricCard
-            label="OPEN CONFLICTS"
-            value={props.conflicts.length.toString()}
-            accent={props.conflicts.length ? "#F59E0B" : "#22C55E"}
-            hint="sentiment deltas flagged"
+            label="PORTFOLIO HEALTH"
+            value={`${props.progressSummary?.health_score.value ?? "—"}`}
+            accent="#22C55E"
+            hint={`delta ${props.progressSummary?.health_score.delta ?? 0}`}
           />
           <MetricCard
-            label="ACTION PLANS"
-            value={props.plans.length.toString()}
+            label="EXECUTION"
+            value={`${props.progressSummary?.totals.open_actions ?? 0}`}
+            accent={(props.progressSummary?.totals.overdue_actions ?? 0) > 0 ? "#EF4444" : "#22C55E"}
+            hint={`${props.progressSummary?.totals.overdue_actions ?? 0} overdue · ${Math.round((props.progressSummary?.trends.action_completion_rate ?? 0) * 100)}% completion`}
+          />
+          <MetricCard
+            label="RISK LOAD"
+            value={`${props.progressSummary?.totals.open_conflicts ?? props.conflicts.length}`}
             accent="#F59E0B"
-            hint="from Red Team runs"
+            hint={`${props.progressSummary?.totals.at_risk_hotspots ?? (t?.at_risk.length ?? 0)} at risk`}
           />
           <MetricCard
-            label="GRAPH SOURCE"
-            value={props.graph?.source === "neo4j" ? "NEO4J" : props.graph?.source?.startsWith("proposed") ? "PROPOSED" : "OFFLINE"}
-            accent={props.graph?.source === "neo4j" ? "#22C55E" : "#6B7280"}
-            hint={`${props.graph?.nodes.length ?? 0} nodes · ${props.graph?.edges.length ?? 0} edges`}
+            label="COVERAGE"
+            value={`${t?.stale.length ?? 0}`}
+            accent={(t?.stale.length ?? 0) > 0 ? "#A855F7" : "#22C55E"}
+            hint={`${props.stakeholders.length} stakeholders tracked`}
           />
         </div>
 
@@ -611,17 +631,17 @@ function TodayView(props: {
 
         {t && openTasks.length > 0 && (
           <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #22C55E40" }}>
-            <SectionHeader icon={ListTodo} label="OPEN ACTIONS — RED TEAM TASKS" accent="#22C55E" />
+            <SectionHeader icon={ListTodo} label="OPEN ACTIONS" accent="#22C55E" />
             <p className="font-mono text-[11px]" style={{ color: "#5A6580" }}>
-              Check tasks off here or in Obsidian; vault YAML and markdown stay in sync.
+              Track execution here; completed actions feed portfolio progress metrics.
             </p>
             <div className="flex flex-col gap-2">
               {openTasks.map((task) => {
-                const busy = taskBusyKey === `${task.plan_path}:${task.idx}`;
+                const busy = taskBusyKey === task.id;
                 const overdue = task.due_by && Date.parse(`${task.due_by}T12:00:00`) < Date.now();
                 return (
                   <div
-                    key={`${task.plan_path}:${task.idx}`}
+                    key={task.id}
                     className="flex items-start gap-3 px-3 py-2.5 rounded-md"
                     style={{ background: "#1A2035", border: "1px solid #1E2A3E" }}
                   >
@@ -631,13 +651,9 @@ function TodayView(props: {
                       disabled={busy}
                       onClick={() => {
                         void (async () => {
-                          setTaskBusyKey(`${task.plan_path}:${task.idx}`);
+                          setTaskBusyKey(task.id);
                           try {
-                            await api.patchActionPlanTask({
-                              path: task.plan_path,
-                              idx: task.idx,
-                              status: "done",
-                            });
+                            await api.patchAction(task.id, { status: "done" });
                             props.onRefresh();
                           } catch (e) {
                             console.error(e);
@@ -678,30 +694,30 @@ function TodayView(props: {
                         )}
                       </div>
                       <p className="font-mono text-sm mt-1" style={{ color: "#E8ECF4" }}>
-                        {task.action}
+                        {task.title}
                       </p>
-                      {task.rationale && (
+                      {task.outcome_note && (
                         <p className="font-sans text-xs mt-1" style={{ color: "#5A6580", lineHeight: 1.4 }}>
-                          {task.rationale}
+                          {task.outcome_note}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-2 mt-2">
-                        {task.stakeholder_id ? (
+                        {typeof task.stakeholder_id === "string" && task.stakeholder_id.length > 0 ? (
                           <button
                             type="button"
                             className="font-mono text-[11px]"
                             style={{ color: "#3B82F6" }}
-                            onClick={() => props.onSelectStakeholder(task.stakeholder_id)}
+                            onClick={() => props.onSelectStakeholder(task.stakeholder_id as string)}
                           >
-                            {task.stakeholder_name || "Stakeholder"}
+                            {task.stakeholder_id || "Stakeholder"}
                           </button>
                         ) : (
                           <span className="font-mono text-[11px]" style={{ color: "#5A6580" }}>
-                            {task.stakeholder_name || "Unknown stakeholder"}
+                            Unknown stakeholder
                           </span>
                         )}
                         <span className="font-mono text-[10px] truncate" style={{ color: "#5A6580" }}>
-                          {task.plan_path}
+                          {typeof task.source?.["ref"] === "string" ? String(task.source["ref"]) : "manual action"}
                         </span>
                       </div>
                     </div>
@@ -802,7 +818,7 @@ function TodayView(props: {
                     {row.days_since_contact}d since touch
                   </span>
                   <p className="font-mono text-[11px] mt-0.5" style={{ color: "#5A6580" }}>
-                    {row.type ?? "—"} · last {formatRelativeIso(row.last_contact_at)}
+                    {row.type ?? "—"} · last {row.last_contact_at ? formatRelativeIso(row.last_contact_at) : "never"}
                   </p>
                 </button>
               ))}
@@ -991,6 +1007,59 @@ function SectionHeader({ icon: Icon, label, accent }: { icon: React.ElementType;
       >
         {label}
       </span>
+    </div>
+  );
+}
+
+function ProgressView(props: {
+  summary: ProgressSummary | null;
+  timeline: ProgressTimeline | null;
+  loading: boolean;
+}) {
+  const s = props.summary;
+  const t = props.timeline;
+  const rows = t?.series ?? {};
+  const keys = Object.keys(rows);
+  return (
+    <div className="h-full w-full overflow-y-auto" style={{ background: "#0A0E17" }}>
+      <div className="mx-auto max-w-7xl px-8 py-10 flex flex-col gap-6">
+        <h1 className="font-mono font-bold text-lg tracking-widest" style={{ color: "#E8ECF4", letterSpacing: "0.12em" }}>
+          PROGRESS · 30 / 90 DAY MOVEMENT
+        </h1>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <MetricCard label="HEALTH SCORE" value={`${s?.health_score.value ?? "—"}`} accent="#22C55E" hint={`delta ${s?.health_score.delta ?? 0}`} />
+          <MetricCard label="OPEN CONFLICTS" value={`${s?.totals.open_conflicts ?? 0}`} accent="#F59E0B" hint={`delta ${s?.trends.open_conflicts_delta ?? 0}`} />
+          <MetricCard label="AT RISK" value={`${s?.totals.at_risk_hotspots ?? 0}`} accent="#EF4444" hint={`delta ${s?.trends.at_risk_hotspots_delta ?? 0}`} />
+          <MetricCard label="COMPLETION" value={`${Math.round((s?.trends.action_completion_rate ?? 0) * 100)}%`} accent="#3B82F6" hint={`delta ${Math.round((s?.trends.action_completion_rate_delta ?? 0) * 100)}%`} />
+        </div>
+        {props.loading && !s && (
+          <p className="font-mono text-xs" style={{ color: "#5A6580" }}>Loading progress…</p>
+        )}
+        {!props.loading && keys.length === 0 && (
+          <EmptyState title="No timeline data yet" body="Run capture and close actions to build trend history." />
+        )}
+        {keys.length > 0 && (
+          <div className="rounded-lg p-5 flex flex-col gap-3" style={{ background: "#111827", border: "1px solid #2A3650" }}>
+            <SectionHeader icon={TrendingUp} label="TREND SERIES" accent="#3B82F6" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {keys.map((k) => {
+                const pts = rows[k] ?? [];
+                const last = pts.length ? pts[pts.length - 1]?.value : 0;
+                const first = pts.length ? pts[0]?.value : 0;
+                const delta = (last ?? 0) - (first ?? 0);
+                return (
+                  <div key={k} className="px-3 py-2.5 rounded-md" style={{ background: "#1A2035", border: "1px solid #1E2A3E" }}>
+                    <p className="font-mono font-semibold text-xs" style={{ color: "#E8ECF4" }}>{k.replace(/_/g, " ").toUpperCase()}</p>
+                    <p className="font-mono text-[11px] mt-1" style={{ color: "#8892A8" }}>
+                      latest {typeof last === "number" ? last.toFixed(2) : "0.00"} · delta {delta >= 0 ? "+" : ""}{delta.toFixed(2)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

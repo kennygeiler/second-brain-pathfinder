@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -250,6 +250,10 @@ def persist_red_team_snapshot(
     }
     out = state_dir / "last_red_team.json"
     out.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+    runs_dir = state_dir / "red_team_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    (runs_dir / f"run-{stamp}.json").write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
 
 
 def write_action_plan(
