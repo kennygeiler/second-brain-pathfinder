@@ -67,7 +67,7 @@ def process_transcription(payload: LedgerPayload) -> LedgerResponse:
                 name=entity.name,
                 entity_type=entity.type,
                 source_lineage_entry=lineage,
-                influence_score=0.5,
+                influence_score=entity.influence,
                 sentiment_vector=entity.sentiment,
                 confidence_score=extraction.confidence,
             )

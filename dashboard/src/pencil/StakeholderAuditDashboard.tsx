@@ -21,41 +21,41 @@ interface GaugeProps {
   subMetrics: { label: string; value: string }[]
 }
 
+// arcPath uses SVG conventions: 0° = east (3 o'clock), angles increase clockwise.
+// The gauge opens at the bottom (90° gap centered at 6 o'clock).
 function arcPath(cx: number, cy: number, r: number, startDeg: number, sweepDeg: number) {
   const toRad = (d: number) => (d * Math.PI) / 180
-  const svgStart = (360 - startDeg) % 360
-  const svgSweep = Math.abs(sweepDeg)
-  const startRad = toRad(svgStart)
-  const endRad   = toRad(svgStart + svgSweep)
-  const x1 = cx + r * Math.cos(startRad)
-  const y1 = cy - r * Math.sin(startRad)
-  const x2 = cx + r * Math.cos(endRad)
-  const y2 = cy - r * Math.sin(endRad)
-  const largeArc = svgSweep > 180 ? 1 : 0
+  const clampedSweep = Math.max(0.01, Math.abs(sweepDeg))
+  const x1 = cx + r * Math.cos(toRad(startDeg))
+  const y1 = cy + r * Math.sin(toRad(startDeg))
+  const endDeg = startDeg + clampedSweep
+  const x2 = cx + r * Math.cos(toRad(endDeg))
+  const y2 = cy + r * Math.sin(toRad(endDeg))
+  const largeArc = clampedSweep > 180 ? 1 : 0
   return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
 }
 
 function Gauge({ value, max = 10, label, color, subMetrics }: GaugeProps) {
-  const maxSweep  = 302
-  const clamped = Math.max(0, Math.min(value, max))
+  const startDeg  = 135                 // bottom-left, 7:30 position
+  const maxSweep  = 270                 // 90° gap at the bottom
+  const clamped   = Math.max(0, Math.min(value, max))
   const fillSweep = (clamped / max) * maxSweep
-  const cx = 80, cy = 80, r = 62
-  const innerR = r * 0.78
+  const cx = 80, cy = 80, r = 60
+  const strokeW = 14
 
-  const bgPath   = arcPath(cx, cy, r - (r - innerR) / 2, 135, maxSweep)
-  const fillPth  = arcPath(cx, cy, r - (r - innerR) / 2, 135, fillSweep)
-  const strokeW  = (r - innerR)
+  const bgPath   = arcPath(cx, cy, r, startDeg, maxSweep)
+  const fillPath = arcPath(cx, cy, r, startDeg, fillSweep)
 
   return (
     <div className="flex flex-col items-center gap-5 p-8 rounded-lg flex-1" style={{ background: '#1A2035', border: '1px solid #2A3650' }}>
       <svg width="160" height="160" viewBox="0 0 160 160">
-        <path d={bgPath}  fill="none" stroke="#2A3650" strokeWidth={strokeW} strokeLinecap="round" opacity={0.3} />
-        <path d={fillPth} fill="none" stroke={color}  strokeWidth={strokeW} strokeLinecap="round" opacity={0.9} />
-        <text x={cx} y={cy - 6} textAnchor="middle" fill="#E8ECF4" fontSize="36" fontWeight="700" fontFamily="JetBrains Mono, monospace">
+        <path d={bgPath}   fill="none" stroke="#2A3650" strokeWidth={strokeW} strokeLinecap="round" />
+        <path d={fillPath} fill="none" stroke={color}    strokeWidth={strokeW} strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${color}70)` }} />
+        <text x={cx} y={cy - 2} textAnchor="middle" dominantBaseline="central" fill="#E8ECF4" fontSize="34" fontWeight="700" fontFamily="JetBrains Mono, monospace">
           {clamped.toFixed(1)}
         </text>
-        <text x={cx} y={cy + 16} textAnchor="middle" fill={color} fontSize="11" fontWeight="600" letterSpacing="2" fontFamily="JetBrains Mono, monospace">
-          / 10
+        <text x={cx} y={cy + 22} textAnchor="middle" dominantBaseline="central" fill={color} fontSize="11" fontWeight="600" letterSpacing="2" fontFamily="JetBrains Mono, monospace">
+          / {max}
         </text>
       </svg>
 
@@ -329,7 +329,7 @@ export default function StakeholderAuditDashboard({ stakeholder, conflict }: Sta
               INTERACTION LEDGER
             </span>
             <div className="flex-1" />
-            <span className="font-mono text-xs" style={{ color: '#5A6580' }}>{ledger.length} entries</span>
+            <span className="font-mono text-xs" style={{ color: '#5A6580' }}>{ledger.length} {ledger.length === 1 ? 'entry' : 'entries'}</span>
           </div>
 
           {/* Feed */}
