@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  CalendarDays,
   CheckSquare,
   Clock,
   Compass,
@@ -34,13 +35,15 @@ import CityNavigationMap from "./pencil/CityNavigationMap";
 import StakeholderAuditDashboard from "./pencil/StakeholderAuditDashboard";
 import ExecutiveHealthMatrix from "./pencil/ExecutiveHealthMatrix";
 import CommandPalette from "./components/CommandPalette";
+import MomentsOverview from "./components/MomentsOverview";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-type TabId = "today" | "capture" | "matrix" | "audit" | "intel" | "nav";
+type TabId = "today" | "moments" | "capture" | "matrix" | "audit" | "intel" | "nav";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "today", label: "Today",              icon: LayoutGrid },
+  { id: "moments", label: "Moments",          icon: CalendarDays },
   { id: "capture",  label: "Capture",          icon: Mic },
   { id: "matrix",   label: "Health Matrix",    icon: Gauge },
   { id: "audit",    label: "Stakeholder",      icon: Activity },
@@ -64,6 +67,7 @@ export function App() {
   const [captureFlash, setCaptureFlash] = useState<LedgerResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [today, setToday] = useState<TodayPayload | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   async function runPivot() {
     if (pivotState === "running") return;
@@ -96,6 +100,7 @@ export function App() {
       setGraph(g);
       setToday(t);
       setState("ready");
+      setRefreshNonce((n) => n + 1);
       if (!selectedId && s.length > 0) setSelectedId(s[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "unknown error");
@@ -259,6 +264,15 @@ export function App() {
             onRunRedTeam={() => void runPivot()}
             pivotRunning={pivotState === "running"}
             onRefresh={() => void load()}
+          />
+        )}
+        {tab === "moments" && (
+          <MomentsOverview
+            refreshNonce={refreshNonce}
+            onSelectStakeholder={(id) => {
+              setSelectedId(id);
+              setTab("audit");
+            }}
           />
         )}
         {tab === "capture" && (

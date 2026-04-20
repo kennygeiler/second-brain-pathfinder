@@ -222,6 +222,32 @@ export type TodayOpenTask = {
   stakeholder_name: string;
 };
 
+export type MomentLegendItem = {
+  kind: string;
+  label: string;
+  color: string;
+};
+
+export type MomentRow = {
+  id: string;
+  kind: string;
+  color: string;
+  at: string;
+  day: string;
+  label: string;
+  detail: string;
+  stakeholder_id: string;
+  stakeholder_name: string;
+  path?: string;
+  plan_path?: string;
+};
+
+export type MomentsPayload = {
+  year: number;
+  legend: MomentLegendItem[];
+  moments: MomentRow[];
+};
+
 export type TodayPayload = {
   stale_days: number;
   last_red_team_at: string | null;
@@ -270,6 +296,8 @@ export const api = {
   archiveStakeholder: (id: string) =>
     deleteJson<ArchiveResponse>(`/stakeholders/${encodeURIComponent(id)}`),
   today: () => getJson<TodayPayload>("/today"),
+  moments: (year?: number) =>
+    getJson<MomentsPayload>(year != null ? `/moments?year=${year}` : "/moments"),
   patchActionPlanTask: (body: ActionPlanTaskPatchBody) =>
     patchJson<ActionPlanTaskPatchResponse>("/action-plans/task", body),
 };

@@ -1,6 +1,7 @@
 """FastAPI entry point: ledger webhook, sync trigger, dashboard BFF."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -9,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import action_plans, obsidian_to_neo4j, today as today_mod, vault
+from . import action_plans, moments as moments_mod, obsidian_to_neo4j, today as today_mod, vault
 from .config import settings
 from .ledger_processor import router as ledger_router
 
@@ -76,6 +77,13 @@ def health() -> dict[str, str]:
 def get_today() -> dict[str, Any]:
     """Priority stack for the dashboard: conflicts, Red Team hotspots, stale, ghosts."""
     return today_mod.build_today_payload(stale_days=settings.stale_days)
+
+
+@app.get("/moments")
+def get_moments(year: Optional[int] = Query(default=None, ge=2000, le=2100)) -> dict[str, Any]:
+    """Stakeholder lineage + conflicts + last Red Team run, bucketed by calendar day."""
+    y = year if year is not None else datetime.now(timezone.utc).year
+    return moments_mod.collect_moments(y)
 
 
 @app.post("/sync")
