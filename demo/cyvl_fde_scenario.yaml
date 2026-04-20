@@ -1,0 +1,370 @@
+# Cyvl AI — Metro Regional DOT embedded engagement (hypothetical).
+# Timeline: ~6 months ending at anchor_date. Used by scripts/reset_and_seed_cyvl_demo.py
+anchor_date: "2026-04-19"
+organization: "Metro Regional Department of Transportation"
+
+red_team:
+  run_at: "2026-04-18T16:45:00+00:00"
+  plan_relative_path: action_plans/Cyvl-Metro-Demo-Action-Plan-2026-04-18.md
+
+conflicts:
+  - stakeholder_name: Maria Santos
+    file_suffix: "2026-04-10"
+    created: "2026-04-10T14:20:00+00:00"
+    previous_sentiment: 0.78
+    new_sentiment: 0.32
+    body_preview: "Council staff relayed that Maria privately questioned curb-rule automation after a vendor whisper campaign."
+
+action_plan:
+  summary: >
+    Close the gap between strong executive sponsorship and near-zero product telemetry
+    before the April board readout — prioritize provable usage on Curb Intelligence and
+    unblock procurement on the sole-source addendum.
+  narrative: |
+    ## Recommendation
+
+    Metro is textbook **institutional inertia**: sentiment on Cyvl stays positive in exec
+    meetings while field workflows never moved off legacy curb tickets. Treat the next two
+    weeks as a **usage proof sprint** — not more slides. Pair Cyvl with Maria’s chief of
+    staff for daily 15m unblockers, and force a joint session with Priya on the addendum
+    before Legal goes dark for Easter.
+
+    ## Demo script hints (FDE)
+
+    - **Today**: clear one Red Team task, walk **Moments** for “last meaningful touch” per power broker.
+    - **Capture**: paste standup notes → Dry Run → commit to refresh lineage.
+    - **Stakeholder**: open Maria → ledger → show conflict banner + inline patch.
+    - **Risk Intel / Map**: show USES edges + telemetry from proposed queue (or Neo4j).
+  tasks:
+    - stakeholder_name: Maria Santos
+      action: Book a 45m working session with Maria and Priya solely on the sole-source addendum blockers.
+      rationale: Procurement is the gating artifact for Feb pilot expansion.
+      due_by: "2026-04-21"
+      priority: p0
+    - stakeholder_name: James Okonkwo
+      action: Route two real curb exception tickets through Cyvl Curb Intelligence with Alex shadowing.
+      rationale: Without live tickets, telemetry stays artificially low.
+      due_by: "2026-04-22"
+      priority: p0
+    - stakeholder_name: Alex Rivera
+      action: Publish a one-page field runbook PDF and link it from the Metro wiki landing page.
+      rationale: Removes “we didn’t know how” as an excuse for non-use.
+      due_by: "2026-04-23"
+      priority: p1
+    - stakeholder_name: Elena Vogel
+      action: Align council talking points with Maria on automation vs workforce — single narrative.
+      rationale: Split messages surfaced in last week’s whisper campaign.
+      due_by: "2026-04-24"
+      priority: p1
+
+stakeholders:
+  - id: a1000001-0001-4000-8000-000000000001
+    name: Maria Santos
+    type: Gatekeeper
+    influence_score: 0.92
+    sentiment_vector: 0.58
+    confidence_score: 0.82
+    ghost: false
+    technical_blockers:
+      - "Sole-source addendum stuck with Legal"
+    body: |
+      # Maria Santos
+
+      ## Role
+      CIO — owns data sharing MOU with Cyvl and internal change management.
+
+      ## Relationships
+      [[James Okonkwo]] [[Priya Nair]] [[Elena Vogel]] [[Jordan Lee]]
+
+      ## Notes
+      Wants the April board story to be **outcomes**, not pilots. Sensitive to workforce optics.
+    lineage:
+      - type: crawl
+        id: lin-maria-crawl-1
+        timestamp: "2025-10-21T18:00:00+00:00"
+        note: "Imported org chart + IT steering roster from public records crawl."
+      - type: voice_ledger
+        id: lin-maria-kickoff
+        timestamp: "2025-10-28T17:30:00+00:00"
+        note: "Kickoff bridge — Maria greenlights Cyvl read-only ingest to asset inventory."
+      - type: email
+        id: lin-maria-mou
+        timestamp: "2025-11-05T20:15:00+00:00"
+        note: "MOU redlines; asks for clearer data-retention boundary."
+      - type: meeting
+        id: lin-maria-steer-1
+        timestamp: "2025-11-18T16:00:00+00:00"
+        meeting_id: mtg-steer-2025-11-18
+        note: "Steering committee — agrees to Feb pilot scope if procurement clears."
+      - type: voice_ledger
+        id: lin-maria-ye
+        timestamp: "2025-12-16T15:00:00+00:00"
+        note: "Year-end check-in — optimistic tone; no field metrics discussed."
+      - type: meeting
+        id: lin-maria-jan
+        timestamp: "2026-01-22T14:30:00+00:00"
+        note: "Technical deep dive — concern about legacy vendor FUD in field offices."
+      - type: email
+        id: lin-maria-feb
+        timestamp: "2026-02-28T19:00:00+00:00"
+        note: "Briefs council staff; asks Cyvl for talking points on automation vs jobs."
+      - type: voice_ledger
+        id: lin-maria-apr-dry
+        timestamp: "2026-04-08T21:00:00+00:00"
+        note: "Dry run for board — wants 'one chart' on curb exceptions resolved vs baseline."
+
+  - id: a1000001-0002-4000-8000-000000000002
+    name: James Okonkwo
+    type: Person
+    influence_score: 0.78
+    sentiment_vector: 0.62
+    confidence_score: 0.74
+    ghost: false
+    body: |
+      # James Okonkwo
+
+      ## Role
+      Chief Engineer — signs off on curb rule changes and field tooling.
+
+      ## Relationships
+      [[Maria Santos]] [[Alex Rivera]] [[Jordan Lee]]
+
+      ## Notes
+      Skeptical of SaaS dashboards; trusts what field supers report.
+    lineage:
+      - type: meeting
+        id: lin-james-1
+        timestamp: "2025-11-03T15:00:00+00:00"
+        note: "Bridge inspection backlog review — agrees to pilot curb exceptions in District 4."
+      - type: voice_ledger
+        id: lin-james-2
+        timestamp: "2026-02-10T18:30:00+00:00"
+        note: "Field pilot kickoff — James wants hard KPI on time-to-close per ticket."
+      - type: email
+        id: lin-james-3
+        timestamp: "2026-03-19T13:45:00+00:00"
+        note: "Shares photo evidence workflow — still mostly on legacy VMS email threads."
+      - type: meeting
+        id: lin-james-4
+        timestamp: "2026-04-14T16:00:00+00:00"
+        note: "Joint standup with Cyvl — agrees to route two live tickets through Cyvl this week."
+
+  - id: a1000001-0003-4000-8000-000000000003
+    name: Priya Nair
+    type: Gatekeeper
+    influence_score: 0.71
+    sentiment_vector: 0.55
+    confidence_score: 0.68
+    ghost: false
+    technical_blockers:
+      - "Legal review queue (sole-source)"
+    body: |
+      # Priya Nair
+
+      ## Role
+      Director of Procurement — sole-source addendum for Cyvl expansion.
+
+      ## Relationships
+      [[Maria Santos]] [[Jordan Lee]]
+
+      ## Notes
+      Will move fast if Legal has cover memo from CIO risk sign-off.
+    lineage:
+      - type: pdf_import
+        id: lin-priya-1
+        timestamp: "2025-12-02T10:00:00+00:00"
+        note: "Budget packet PDF — flags bond covenant language on vendor switching."
+      - type: email
+        id: lin-priya-2
+        timestamp: "2026-01-08T17:20:00+00:00"
+        note: "Q&A on liability caps in master services agreement."
+      - type: meeting
+        id: lin-priya-3
+        timestamp: "2026-03-05T15:30:00+00:00"
+        note: "Vendor escalation session — Legacy VMS claims feature parity."
+      - type: email
+        id: lin-priya-4
+        timestamp: "2026-04-12T09:00:00+00:00"
+        note: "Requests revised SOW dates aligned to board readout."
+
+  - id: a1000001-0004-4000-8000-000000000004
+    name: Alex Rivera
+    type: Person
+    influence_score: 0.64
+    sentiment_vector: 0.7
+    confidence_score: 0.77
+    ghost: false
+    body: |
+      # Alex Rivera
+
+      ## Role
+      Field Operations Lead — District 4 supers report here.
+
+      ## Relationships
+      [[James Okonkwo]] [[Jordan Lee]]
+
+      ## Notes
+      Champion for pragmatic rollout; hates tool sprawl.
+    lineage:
+      - type: voice_ledger
+        id: lin-alex-1
+        timestamp: "2025-10-30T14:00:00+00:00"
+        note: "Discovery ride-along — lists 6 friction points on curb exception intake."
+      - type: meeting
+        id: lin-alex-2
+        timestamp: "2026-02-10T19:00:00+00:00"
+        note: "Pilot kickoff — volunteers supers for shadow shifts."
+      - type: email
+        id: lin-alex-3
+        timestamp: "2026-04-01T12:10:00+00:00"
+        note: "Shares before/after photos for council packet."
+
+  - id: a1000001-0005-4000-8000-000000000005
+    name: Elena Vogel
+    type: Role
+    influence_score: 0.88
+    sentiment_vector: 0.48
+    confidence_score: 0.55
+    ghost: false
+    body: |
+      # Elena Vogel
+
+      ## Role
+      City Council — Transport Committee chair.
+
+      ## Relationships
+      [[Maria Santos]] [[Jordan Lee]]
+
+      ## Notes
+      Public narrative matters more than internal sentiment scores.
+    lineage:
+      - type: meeting
+        id: lin-elena-1
+        timestamp: "2025-11-25T18:00:00+00:00"
+        note: "Public hearing — mixed messages on curb automation."
+      - type: voice_ledger
+        id: lin-elena-2
+        timestamp: "2026-02-28T20:30:00+00:00"
+        note: "Staff briefing — asks for workforce impact slide."
+      - type: email
+        id: lin-elena-3
+        timestamp: "2026-04-05T14:00:00+00:00"
+        note: "Requests Cyvl presence at committee walkthrough Apr 25."
+
+  - id: a1000001-0006-4000-8000-000000000006
+    name: David Chen
+    type: Agency
+    influence_score: 0.55
+    sentiment_vector: 0.52
+    confidence_score: 0.45
+    ghost: false
+    body: |
+      # David Chen
+
+      ## Role
+      FHWA liaison — quarterly compliance touchpoint.
+
+      ## Relationships
+      [[James Okonkwo]]
+
+      ## Notes
+      **Stale on purpose for demo:** last structured touch was months ago; FDE should re-engage.
+    lineage:
+      - type: meeting
+        id: lin-david-1
+        timestamp: "2025-10-15T14:00:00+00:00"
+        note: "Quarterly compliance intro call."
+      - type: email
+        id: lin-david-2
+        timestamp: "2025-11-20T16:00:00+00:00"
+        note: "Requests MAP-21 reporting alignment memo."
+      - type: voice_ledger
+        id: lin-david-3
+        timestamp: "2026-02-03T15:30:00+00:00"
+        note: "Check-in on incident reporting — no Cyvl in workflow yet."
+      # Intentionally no March/April contact → shows up under Stale in Today
+
+  - id: a1000001-0007-4000-8000-000000000007
+    name: Legacy-VMS-Vendor
+    type: System
+    influence_score: 0.35
+    sentiment_vector: 0.4
+    confidence_score: 0.3
+    ghost: true
+    body: |
+      # Legacy-VMS-Vendor
+
+      ## Role
+      Incumbent curb / work-order adjacent vendor (cold-start ghost node).
+
+      ## Relationships
+
+      ## Notes
+      Only crawl/PDF lineage — simulates vendor discovered from documents, not meetings.
+    lineage:
+      - type: crawl
+        id: lin-legacy-1
+        timestamp: "2025-10-22T12:00:00+00:00"
+        note: "Crawled marketing site + SEC risk factors from parentco."
+      - type: pdf_import
+        id: lin-legacy-2
+        timestamp: "2025-12-08T11:00:00+00:00"
+        note: "Imported old contract PDF from records request."
+
+  - id: a1000001-0008-4000-8000-000000000008
+    name: Jordan Lee
+    type: Person
+    influence_score: 0.45
+    sentiment_vector: 0.75
+    confidence_score: 0.9
+    ghost: false
+    body: |
+      # Jordan Lee
+
+      ## Role
+      Forward Deployed Engineer — Cyvl AI (you).
+
+      ## Relationships
+      [[Maria Santos]] [[James Okonkwo]] [[Priya Nair]] [[Alex Rivera]] [[Elena Vogel]]
+
+      ## Notes
+      Internal working note — link to customer power map for demo narrative.
+    lineage:
+      - type: voice_ledger
+        id: lin-jordan-1
+        timestamp: "2025-10-28T17:45:00+00:00"
+        note: "Internal — Day 1 kickoff debrief with Cyvl CS."
+      - type: email
+        id: lin-jordan-2
+        timestamp: "2026-04-18T09:00:00+00:00"
+        note: "Daily standup summary emailed to Metro distribution list."
+
+hotspots:
+  - id: a1000001-0001-4000-8000-000000000001
+    name: Maria Santos
+    influence: 0.92
+    sentiment: 0.58
+    telemetry: 0.04
+    system_name: Cyvl Curb Intelligence
+    reason: "Executive sponsor with near-zero live curb workflows in telemetry."
+  - id: a1000001-0002-4000-8000-000000000002
+    name: James Okonkwo
+    influence: 0.78
+    sentiment: 0.62
+    telemetry: 0.18
+    system_name: Metro Digital Twin
+    reason: "High trust; usage concentrated in twin viewer, not curb automation."
+  - id: a1000001-0005-4000-8000-000000000005
+    name: Elena Vogel
+    influence: 0.88
+    sentiment: 0.48
+    telemetry: 0.06
+    system_name: Cyvl Curb Intelligence
+    reason: "Political narrative risk — committee hearing in 7 days."
+  - id: a1000001-0007-4000-8000-000000000007
+    name: Legacy-VMS-Vendor
+    influence: 0.35
+    sentiment: 0.4
+    telemetry: 0.0
+    system_name: Legacy Ticket Export
+    reason: "Ghost incumbent still capturing field attention via email workflows."

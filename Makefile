@@ -4,7 +4,7 @@ VENV_PY := $(firstword $(wildcard .venv/bin/python /tmp/pathfinder-venv/bin/pyth
 PYTHON ?= $(if $(VENV_PY),$(VENV_PY),python3)
 UVICORN ?= $(PYTHON) -m uvicorn
 
-.PHONY: dev install install-dev test run neo4j-up neo4j-down demo demo-commit sync red-team dashboard clean-vault help
+.PHONY: dev install install-dev test run neo4j-up neo4j-down demo demo-commit demo-cyvl-reset demo-cyvl-reset-neo4j sync red-team dashboard clean-vault help
 
 help:
 	@echo "Targets:"
@@ -17,6 +17,8 @@ help:
 	@echo "  run           run FastAPI on :8000 (only — prefer 'make dev')"
 	@echo "  demo          run end-to-end pipeline (proposed-only)"
 	@echo "  demo-commit   run end-to-end pipeline and commit to Neo4j"
+	@echo "  demo-cyvl-reset        wipe vault (keep templates) + seed Cyvl FDE scenario YAML"
+	@echo "  demo-cyvl-reset-neo4j  same + sync entities + telemetry into Neo4j"
 	@echo "  sync          vault -> Neo4j proposals"
 	@echo "  red-team      run Red Team LangGraph"
 	@echo "  dashboard     npm install + npm run dev in dashboard/ (only)"
@@ -49,6 +51,13 @@ demo:
 
 demo-commit:
 	$(PYTHON) scripts/run_demo.py --commit
+
+# Force repo ./vault so a bad VAULT_PATH in .env (e.g. /path/to/...) cannot break the seed.
+demo-cyvl-reset:
+	VAULT_PATH="$(CURDIR)/vault" $(PYTHON) scripts/reset_and_seed_cyvl_demo.py
+
+demo-cyvl-reset-neo4j:
+	VAULT_PATH="$(CURDIR)/vault" $(PYTHON) scripts/reset_and_seed_cyvl_demo.py --commit-neo4j
 
 sync:
 	$(PYTHON) -m services.api.obsidian_to_neo4j

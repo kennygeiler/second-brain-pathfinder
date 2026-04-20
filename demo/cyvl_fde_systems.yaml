@@ -1,0 +1,31 @@
+# Telemetry fixture for Cyvl FDE demo — resolved after stakeholders are seeded.
+systems:
+  - id: sys-curb-intel
+    name: Cyvl Curb Intelligence
+  - id: sys-metro-twin
+    name: Metro Digital Twin
+  - id: sys-signal-health
+    name: Signal Health Monitor
+
+uses:
+  - stakeholder_name: Maria Santos
+    system_id: sys-curb-intel
+    telemetry_score: 0.04
+  - stakeholder_name: Maria Santos
+    system_id: sys-metro-twin
+    telemetry_score: 0.12
+  - stakeholder_name: James Okonkwo
+    system_id: sys-metro-twin
+    telemetry_score: 0.72
+  - stakeholder_name: James Okonkwo
+    system_id: sys-curb-intel
+    telemetry_score: 0.18
+  - stakeholder_name: Alex Rivera
+    system_id: sys-signal-health
+    telemetry_score: 0.55
+  - stakeholder_name: Elena Vogel
+    system_id: sys-curb-intel
+    telemetry_score: 0.06
+  - stakeholder_name: Jordan Lee
+    system_id: sys-curb-intel
+    telemetry_score: 0.41
