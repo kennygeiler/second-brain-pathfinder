@@ -125,6 +125,10 @@ def write_stakeholder(note: dict[str, Any]) -> None:
         "source_lineage": lineage,
         "technical_blockers": note.get("technical_blockers") or [],
     }
+    for key in ("reports_to", "department", "org_unit", "rank"):
+        val = note.get(key)
+        if val is not None and str(val).strip():
+            meta[key] = str(val).strip()
     body = (note.get("body") or f"# {note['name']}\n").rstrip() + "\n"
     post = frontmatter.Post(content=body, **meta)
     slug = vault.slugify(note["name"])

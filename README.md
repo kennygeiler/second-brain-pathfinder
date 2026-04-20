@@ -58,7 +58,9 @@ This README explains **what the product does**, **how an FDE should use it** to 
 ### Graph & sync
 
 - **`obsidian_to_neo4j`** — Walks vault notes, builds **proposed** node/edge payloads, **optional** commit to Neo4j (`AUTO_COMMIT` / manual sync).
-- **GET `/graph`** — Returns nodes/edges from **Neo4j** when available; otherwise from the **latest `vault/proposed/sync-*.json`** snapshot.
+- **Wiki links** in note bodies → **`LINKS_TO`** edges (unchanged).
+- **Org-aware frontmatter** (see `vault-schema.yaml`) — optional **`reports_to`** (manager name matching another note) → **`REPORTS_TO`**; **`department`** / **`org_unit`** (name matching another note, often an Agency) → **`MEMBER_OF`**; unresolved org strings still land on the entity as **`org_unit`**. Optional **`rank`** / **`title`** → **`rank`** on `:Entity`.
+- **GET `/graph`** — Returns nodes/edges from **Neo4j** when available; otherwise from the **latest `vault/proposed/sync-*.json`**, normalizing proposed edges to **`source` / `target` / `type`** so the dashboard matches the Neo4j shape.
 
 ### Red Team
 
@@ -73,7 +75,7 @@ This README explains **what the product does**, **how an FDE should use it** to 
 
 ### Stakeholder CRUD (vault-native)
 
-- **PATCH `/stakeholders/{id}`** — Update whitelisted YAML fields (type, influence, sentiment, blockers, etc.).
+- **PATCH `/stakeholders/{id}`** — Update whitelisted YAML fields (type, influence, sentiment, blockers, **`reports_to`**, **`department`**, **`org_unit`**, **`rank`**, etc.).
 - **PUT `/stakeholders/{id}/notes`** — Replace Markdown **body** (private notes) under frontmatter.
 - **POST `/stakeholders/{id}/merge`** — Merge one note into another; source **archived** under `vault/archive/`.
 - **DELETE `/stakeholders/{id}`** — **Soft-delete** (archive file).
@@ -82,7 +84,7 @@ This README explains **what the product does**, **how an FDE should use it** to 
 ### Search & navigation
 
 - **⌘K / Ctrl+K** — Command palette over **loaded** stakeholders, conflicts, action plans (fuzzy match, grouped).
-- **Tabs** — Today, Capture, Health Matrix, Stakeholder, Risk Intel, Pathfinder Map **live graph** (force layout, influence/sentiment coloring).
+- **Tabs** — Today, Capture, Health Matrix, Stakeholder, Risk Intel, Pathfinder Map **live graph** (force layout, influence/sentiment coloring). On live maps, **ALL / ORG / PRODUCT / COMBO** filters which relationship types are drawn (org = reporting + membership; product = usage / friction / influence + wiki links touching **System** nodes; combo = union).
 
 ### Cold start & scripts
 
@@ -115,6 +117,7 @@ Think in **loops**: **map → capture → reconcile → graph → stress-test �
 ### 4. Keep the graph honest
 
 - Use **wiki-links** in note bodies where your ontology supports it (edges flow from links + sync).
+- Add **structured org fields** in YAML when you know them: **`reports_to`**, **`department`** (or **`org_unit`**) pointing at **display names** of other stakeholder notes, **`rank`** or **`title`** — sync emits **`REPORTS_TO`**, **`MEMBER_OF`**, and property updates, not only wiki **`LINKS_TO`**.
 - After bulk edits, **sync** to refresh **Neo4j** / proposed snapshot so **graphs** match the vault.
 
 ### 5. Run Red Team on a rhythm (weekly / pre-QBR)
@@ -218,8 +221,8 @@ make dev
 ## Verification & demos
 
 ```bash
-# Python tests
-pytest
+# Python tests (uses repo Makefile Python / .venv when present)
+make test
 
 # Dashboard typecheck + build
 (cd dashboard && npx tsc --noEmit && npm run build)
@@ -230,6 +233,16 @@ python scripts/verify_openai.py
 # End-to-end demo (separate from make dev if needed)
 make demo
 ```
+
+**Cyvl FDE demo — reset vault + re-seed from YAML** (forces `VAULT_PATH` to `./vault`):
+
+```bash
+make demo-cyvl-reset              # vault only; writes proposed JSON, no Neo4j write
+make neo4j-up                     # once, if using Docker Neo4j
+make demo-cyvl-reset-neo4j        # wipe Neo4j + vault seed + sync + telemetry into Neo4j
+```
+
+Requires **`neo4j` Python driver** (`pip install -r requirements.txt`) and a reachable **`NEO4J_*`** for the Neo4j targets.
 
 ---
 

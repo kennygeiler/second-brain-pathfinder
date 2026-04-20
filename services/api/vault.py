@@ -195,6 +195,10 @@ PATCHABLE_FIELDS: frozenset[str] = frozenset(
         "sentiment_vector",
         "technical_blockers",
         "ghost",
+        "reports_to",
+        "department",
+        "org_unit",
+        "rank",
     }
 )
 

@@ -7,6 +7,8 @@ neo4j/
 *.log
 node_modules/
 dashboard/dist/
+dashboard/tsconfig.tsbuildinfo
+*.tsbuildinfo
 .vite/
 vault/**/*.md
 !vault/templates/

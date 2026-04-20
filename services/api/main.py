@@ -32,6 +32,10 @@ class StakeholderPatch(BaseModel):
     sentiment_vector: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     technical_blockers: Optional[list[str]] = None
     ghost: Optional[bool] = None
+    reports_to: Optional[str] = None
+    department: Optional[str] = None
+    org_unit: Optional[str] = None
+    rank: Optional[str] = None
 
 
 class NotesBody(BaseModel):
@@ -304,6 +308,35 @@ def _neo4j_entity_props(node: Any) -> dict[str, Any]:
     return {str(k): _jsonify_graph_value(v) for k, v in raw.items()}
 
 
+def _normalize_proposed_node(node: Any) -> dict[str, Any]:
+    """Map staged sync JSON node fields to the shape the dashboard expects."""
+    if not isinstance(node, dict):
+        return {}
+    out = {str(k): _jsonify_graph_value(v) for k, v in node.items()}
+    if "influence" not in out and "influence_score" in out:
+        out["influence"] = out.get("influence_score")
+    if "sentiment" not in out and "sentiment_vector" in out:
+        out["sentiment"] = out.get("sentiment_vector")
+    return out
+
+
+def _normalize_proposed_edge(edge: Any) -> dict[str, Any]:
+    """Map staged sync JSON edges (source_id + relationship) to LiveGraph's source/type."""
+    if not isinstance(edge, dict):
+        return {}
+    src = edge.get("source") if edge.get("source") is not None else edge.get("source_id")
+    tgt = edge.get("target") if edge.get("target") is not None else edge.get("target_id")
+    rel = edge.get("type") if edge.get("type") is not None else edge.get("relationship")
+    if src is None or tgt is None:
+        return {}
+    typ = str(rel or "LINKS_TO").strip().upper().replace(" ", "_").replace("-", "_")
+    return {
+        "source": _jsonify_graph_value(src),
+        "target": _jsonify_graph_value(tgt),
+        "type": typ,
+    }
+
+
 @app.get("/graph")
 def graph_snapshot(limit: int = Query(default=200, ge=1, le=2000)) -> dict[str, Any]:
     """Return graph metrics from Neo4j when available, else from proposed queue."""
@@ -357,8 +390,18 @@ def _proposed_snapshot(limit: int) -> dict[str, Any]:
         return {"source": "empty", "nodes": [], "edges": []}
     if not isinstance(payload, dict):
         return {"source": "empty", "nodes": [], "edges": []}
+    raw_nodes = payload.get("nodes") or []
+    raw_edges = payload.get("edges") or []
+    nodes_in = raw_nodes[:limit] if isinstance(raw_nodes, list) else []
+    edges_in = raw_edges[:limit] if isinstance(raw_edges, list) else []
+    nodes_out = [_normalize_proposed_node(n) for n in nodes_in]
+    edges_out: list[dict[str, Any]] = []
+    for e in edges_in:
+        ne = _normalize_proposed_edge(e)
+        if ne:
+            edges_out.append(ne)
     return {
         "source": f"proposed:{latest.name}",
-        "nodes": (payload.get("nodes") or [])[:limit] if isinstance(payload.get("nodes"), list) else [],
-        "edges": (payload.get("edges") or [])[:limit] if isinstance(payload.get("edges"), list) else [],
+        "nodes": nodes_out,
+        "edges": edges_out,
     }

@@ -3,6 +3,8 @@ import type { GraphSnapshot, GraphNode, GraphEdge } from "../api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type GraphInsightView = "all" | "org" | "product" | "combined";
+
 export interface LiveGraphProps {
   graph: GraphSnapshot;
   width?: number;
@@ -10,6 +12,8 @@ export interface LiveGraphProps {
   onNodeClick?: (id: string) => void;
   selectedId?: string | null;
   highlightIds?: Set<string>;
+  /** When not `all`, only matching relationship types are drawn (nodes stay the same). */
+  graphInsightView?: GraphInsightView;
 }
 
 interface Pos {
@@ -51,11 +55,54 @@ function labelInitials(name: string | undefined): string {
 
 const EDGE_COLOR: Record<string, string> = {
   REPORTS_TO: "#22C55E",
+  MEMBER_OF: "#A855F7",
   INFLUENCES: "#3B82F6",
   BLOCKS: "#EF4444",
   USES: "#6B7280",
   LINKS_TO: "#8892A8",
 };
+
+function edgeRelType(e: GraphEdge): string {
+  const rel = (e as GraphEdge & { relationship?: string }).relationship;
+  const raw = e.type ?? rel;
+  return String(raw ?? "LINKS_TO")
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+}
+
+function filterGraphEdges(
+  insight: GraphInsightView | undefined,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): GraphEdge[] {
+  const view = insight ?? "all";
+  if (view === "all") return edges;
+
+  const idToType = new Map<string, string | undefined>();
+  for (const n of nodes) {
+    idToType.set(n.id, typeof n.type === "string" ? n.type : undefined);
+  }
+
+  const orgTypes = new Set(["REPORTS_TO", "MEMBER_OF"]);
+  const productCore = new Set(["USES", "BLOCKS", "INFLUENCES"]);
+
+  return edges.filter((e) => {
+    const rel = edgeRelType(e);
+    const sT = idToType.get(e.source);
+    const tT = idToType.get(e.target);
+    const touchesSystem = typeIsSystem(sT) || typeIsSystem(tT);
+
+    if (view === "org") return orgTypes.has(rel);
+    if (view === "product") {
+      if (productCore.has(rel)) return true;
+      return rel === "LINKS_TO" && touchesSystem;
+    }
+    if (orgTypes.has(rel)) return true;
+    if (productCore.has(rel)) return true;
+    return rel === "LINKS_TO" && touchesSystem;
+  });
+}
 
 // ─── Deterministic seeded PRNG ───────────────────────────────────────────────
 
@@ -432,6 +479,7 @@ export default function LiveGraph({
   onNodeClick,
   selectedId = null,
   highlightIds,
+  graphInsightView = "all",
 }: LiveGraphProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -442,15 +490,20 @@ export default function LiveGraph({
   const [dragOp, setDragOp] = useState<DragOp | null>(null);
   const dragMovedRef = useRef(false);
 
+  const displayEdges = useMemo(
+    () => filterGraphEdges(graphInsightView, graph.nodes, graph.edges),
+    [graphInsightView, graph.nodes, graph.edges],
+  );
+
   const positions = useMemo(
-    () => computeLayout(graph.nodes, graph.edges, width, height),
-    [graph, width, height],
+    () => computeLayout(graph.nodes, displayEdges, width, height),
+    [graph.nodes, displayEdges, width, height],
   );
 
   // Clear pinned positions when graph shape changes
   useEffect(() => {
     setPinned(new Map());
-  }, [graph]);
+  }, [graph, graphInsightView]);
 
   const getPos = useCallback(
     (id: string) => {
@@ -465,31 +518,31 @@ export default function LiveGraph({
   const neighborhood = useMemo(() => {
     if (!selectedId) return null;
     const set = new Set<string>([selectedId]);
-    for (const e of graph.edges) {
+    for (const e of displayEdges) {
       if (e.source === selectedId) set.add(e.target);
       if (e.target === selectedId) set.add(e.source);
     }
     return set;
-  }, [graph.edges, selectedId]);
+  }, [displayEdges, selectedId]);
 
   const degree = useMemo(() => {
     const d = new Map<string, number>();
-    for (const e of graph.edges) {
+    for (const e of displayEdges) {
       d.set(e.source, (d.get(e.source) ?? 0) + 1);
       d.set(e.target, (d.get(e.target) ?? 0) + 1);
     }
     return d;
-  }, [graph.edges]);
+  }, [displayEdges]);
 
   const blockerDegree = useMemo(() => {
     const d = new Map<string, number>();
-    for (const e of graph.edges) {
-      if (e.type !== "BLOCKS") continue;
+    for (const e of displayEdges) {
+      if (edgeRelType(e) !== "BLOCKS") continue;
       d.set(e.source, (d.get(e.source) ?? 0) + 1);
       d.set(e.target, (d.get(e.target) ?? 0) + 1);
     }
     return d;
-  }, [graph.edges]);
+  }, [displayEdges]);
 
   // ─── Coord conversion helpers ─────────────────────────────────────────────
 
@@ -692,12 +745,13 @@ export default function LiveGraph({
         onMouseDown={handleSvgMouseDown}
       >
         <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-          {graph.edges.map((e, i) => {
+          {displayEdges.map((e, i) => {
             const a = getPos(e.source);
             const b = getPos(e.target);
             if (!a || !b) return null;
-            const color = EDGE_COLOR[e.type] ?? "#6B7280";
-            const isBlocker = e.type === "BLOCKS";
+            const rel = edgeRelType(e);
+            const color = EDGE_COLOR[rel] ?? "#6B7280";
+            const isBlocker = rel === "BLOCKS";
             const strokeW = isBlocker ? 2.5 : 1.5;
             const dim =
               (neighborhood != null &&
@@ -706,7 +760,7 @@ export default function LiveGraph({
                 !(highlightIds.has(e.source) && highlightIds.has(e.target)));
             return (
               <EdgeLine
-                key={`${e.source}→${e.target}-${e.type}-${i}`}
+                key={`${e.source}→${e.target}-${rel}-${i}`}
                 ax={a.x}
                 ay={a.y}
                 bx={b.x}

@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Compass, TriangleAlert, Zap } from 'lucide-react'
-import LiveGraph from '../components/LiveGraph'
+import LiveGraph, { type GraphInsightView } from '../components/LiveGraph'
 import type { ActionPlan, GraphSnapshot } from '../api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -337,6 +337,13 @@ const LEGEND = [
   { color: '#EF4444', label: 'Friction' },
 ]
 
+const INSIGHT_OPTIONS: { id: GraphInsightView; label: string }[] = [
+  { id: 'all', label: 'ALL' },
+  { id: 'org', label: 'ORG' },
+  { id: 'product', label: 'PRODUCT' },
+  { id: 'combined', label: 'COMBO' },
+]
+
 const EDGES = mkEdges()
 
 export default function CityNavigationMap({
@@ -346,6 +353,7 @@ export default function CityNavigationMap({
   selectedId,
 }: CityNavigationMapProps = {}) {
   const live = !!graph
+  const [insight, setInsight] = useState<GraphInsightView>('all')
 
   return (
     <div className="flex h-full w-full overflow-hidden" style={{ background: '#0A0E17' }}>
@@ -362,6 +370,27 @@ export default function CityNavigationMap({
               ? `Force-directed · ${graph!.nodes.length} nodes · ${graph!.edges.length} edges · ${graph!.source}`
               : 'Pathfinder View · Sentiment Analysis · Live'}
           </span>
+          {live && (
+            <div className="flex flex-wrap gap-1 mt-1.5" role="radiogroup" aria-label="Graph insight filter">
+              {INSIGHT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={insight === opt.id}
+                  onClick={() => setInsight(opt.id)}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded"
+                  style={{
+                    background: insight === opt.id ? '#1F3A5F' : '#1F2A40',
+                    color: insight === opt.id ? '#E8ECF4' : '#8892A8',
+                    border: '1px solid #2A3650',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div
@@ -389,6 +418,7 @@ export default function CityNavigationMap({
             graph={graph!}
             onNodeClick={onNodeClick}
             selectedId={selectedId}
+            graphInsightView={insight}
           />
         ) : (
           <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1500 1080" preserveAspectRatio="xMidYMid meet">

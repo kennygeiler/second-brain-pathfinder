@@ -19,3 +19,8 @@ optional_keys:
   last_updated: "ISO-8601 from last ledger write"
   subtype: "e.g. Gatekeeper under Person"
   ghost: "boolean — cold-start placeholder without full verification"
+  reports_to: "manager or dotted-line lead — display name of another stakeholder note; emits REPORTS_TO in graph sync"
+  department: "org unit name; if it matches another note (often type Agency), emits MEMBER_OF; otherwise stored as org context only"
+  org_unit: "alias for department when naming an org bucket; same resolve-then-MEMBER_OF behavior"
+  rank: "job rank or seniority label; synced to Entity.rank in Neo4j"
+  title: "alias for rank (e.g. job title) when rank is not set"

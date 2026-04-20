@@ -20,13 +20,31 @@ class NodeProposal:
     type: str
     influence: float
     sentiment: float
+    rank: Optional[str] = None
+    org_unit: Optional[str] = None
 
     def cypher(self) -> tuple[str, dict[str, Any]]:
-        query = (
-            "MERGE (e:Entity {id: $id}) "
-            "SET e.name = $name, e.type = $type, e.influence = $influence, e.sentiment = $sentiment"
-        )
-        return query, asdict(self) | {}
+        sets = [
+            "e.name = $name",
+            "e.type = $type",
+            "e.influence = $influence",
+            "e.sentiment = $sentiment",
+        ]
+        params: dict[str, Any] = {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "influence": self.influence,
+            "sentiment": self.sentiment,
+        }
+        if self.rank:
+            sets.append("e.rank = $rank")
+            params["rank"] = self.rank
+        if self.org_unit:
+            sets.append("e.org_unit = $org_unit")
+            params["org_unit"] = self.org_unit
+        query = "MERGE (e:Entity {id: $id}) SET " + ", ".join(sets)
+        return query, params
 
 
 @dataclass
@@ -53,7 +71,14 @@ class EdgeProposal:
         }
 
 
-_ALLOWED_RELS = {"REPORTS_TO", "INFLUENCES", "BLOCKS", "USES", "LINKS_TO"}
+_ALLOWED_RELS = {
+    "REPORTS_TO",
+    "INFLUENCES",
+    "BLOCKS",
+    "USES",
+    "LINKS_TO",
+    "MEMBER_OF",
+}
 
 
 def _sanitize_rel(name: str) -> str:
@@ -69,12 +94,80 @@ def _target_id_for_link(link: str) -> tuple[str, str]:
     return f"ghost::{vault.slugify(link)}", link
 
 
+def _clean_str(val: Any) -> Optional[str]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s or None
+
+
+def _edge_key(source_id: str, target_id: str, relationship: str) -> tuple[str, str, str]:
+    rel = _sanitize_rel(relationship)
+    return (source_id, target_id, rel)
+
+
+def _append_edge(
+    edges: list[EdgeProposal],
+    seen: set[tuple[str, str, str]],
+    *,
+    source_id: str,
+    target_id: str,
+    target_name: str,
+    relationship: str,
+) -> None:
+    key = _edge_key(source_id, target_id, relationship)
+    if key in seen:
+        return
+    seen.add(key)
+    edges.append(
+        EdgeProposal(
+            kind="edge",
+            source_id=source_id,
+            target_id=target_id,
+            target_name=target_name,
+            relationship=key[2],
+        )
+    )
+
+
 def build_proposals() -> tuple[list[NodeProposal], list[EdgeProposal]]:
     nodes: list[NodeProposal] = []
     edges: list[EdgeProposal] = []
+    seen: set[tuple[str, str, str]] = set()
 
     for note in vault.iter_stakeholder_notes(include_conflicts=False):
         data = note.data
+        rank = _clean_str(data.get("rank") or data.get("title"))
+        raw_org = _clean_str(data.get("department") or data.get("org_unit"))
+        org_unit_prop: Optional[str] = None
+        if raw_org:
+            dept_note = vault.find_by_name(raw_org)
+            if dept_note is not None and dept_note.id != note.id:
+                _append_edge(
+                    edges,
+                    seen,
+                    source_id=note.id,
+                    target_id=dept_note.id,
+                    target_name=dept_note.name,
+                    relationship="MEMBER_OF",
+                )
+                org_unit_prop = dept_note.name
+            else:
+                org_unit_prop = raw_org
+
+        mgr_name = _clean_str(data.get("reports_to"))
+        if mgr_name:
+            mgr = vault.find_by_name(mgr_name)
+            if mgr is not None and mgr.id != note.id:
+                _append_edge(
+                    edges,
+                    seen,
+                    source_id=note.id,
+                    target_id=mgr.id,
+                    target_name=mgr.name,
+                    relationship="REPORTS_TO",
+                )
+
         nodes.append(
             NodeProposal(
                 kind="node",
@@ -83,18 +176,19 @@ def build_proposals() -> tuple[list[NodeProposal], list[EdgeProposal]]:
                 type=str(data.get("type", "Person")),
                 influence=float(data.get("influence_score", 0.5)),
                 sentiment=float(data.get("sentiment_vector", 0.5)),
+                rank=rank,
+                org_unit=org_unit_prop,
             )
         )
         for link in vault.extract_wiki_links(note.post.content):
             target_id, target_name = _target_id_for_link(link)
-            edges.append(
-                EdgeProposal(
-                    kind="edge",
-                    source_id=note.id,
-                    target_id=target_id,
-                    target_name=target_name,
-                    relationship="LINKS_TO",
-                )
+            _append_edge(
+                edges,
+                seen,
+                source_id=note.id,
+                target_id=target_id,
+                target_name=target_name,
+                relationship="LINKS_TO",
             )
 
     return nodes, edges
@@ -107,9 +201,24 @@ def write_proposed_queue(
     proposed_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = proposed_dir / f"sync-{stamp}.json"
+    def _node_payload(n: NodeProposal) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "kind": n.kind,
+            "id": n.id,
+            "name": n.name,
+            "type": n.type,
+            "influence": n.influence,
+            "sentiment": n.sentiment,
+        }
+        if n.rank:
+            d["rank"] = n.rank
+        if n.org_unit:
+            d["org_unit"] = n.org_unit
+        return d
+
     payload = {
         "generated_at": vault.now_iso(),
-        "nodes": [asdict(n) for n in nodes],
+        "nodes": [_node_payload(n) for n in nodes],
         "edges": [asdict(e) for e in edges],
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

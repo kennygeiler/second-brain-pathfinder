@@ -13,7 +13,7 @@ SYSTEMS = ROOT / "demo" / "cyvl_fde_systems.yaml"
 def test_cyvl_scenario_yaml_loads() -> None:
     data = yaml.safe_load(SCENARIO.read_text(encoding="utf-8"))
     assert data.get("anchor_date")
-    assert len(data.get("stakeholders") or []) == 8
+    assert len(data.get("stakeholders") or []) == 9
     assert data.get("hotspots")
     assert data.get("action_plan", {}).get("tasks")
     maria = next(s for s in data["stakeholders"] if s["name"] == "Maria Santos")

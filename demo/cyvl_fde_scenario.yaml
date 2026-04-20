@@ -120,6 +120,7 @@ stakeholders:
     sentiment_vector: 0.62
     confidence_score: 0.74
     ghost: false
+    department: Metro Field Operations
     body: |
       # James Okonkwo
 
@@ -194,6 +195,9 @@ stakeholders:
     sentiment_vector: 0.7
     confidence_score: 0.77
     ghost: false
+    department: Metro Field Operations
+    reports_to: James Okonkwo
+    rank: District Field Lead
     body: |
       # Alex Rivera
 
@@ -310,6 +314,30 @@ stakeholders:
         id: lin-legacy-2
         timestamp: "2025-12-08T11:00:00+00:00"
         note: "Imported old contract PDF from records request."
+
+  - id: a1000001-0009-4000-8000-000000000009
+    name: Metro Field Operations
+    type: Agency
+    influence_score: 0.5
+    sentiment_vector: 0.55
+    confidence_score: 0.5
+    ghost: false
+    technical_blockers: []
+    body: |
+      # Metro Field Operations
+
+      ## Role
+      District field supers, inspectors, and curb operations org bucket.
+
+      ## Relationships
+
+      ## Notes
+      Org-unit node for MEMBER_OF edges from field roles in the Cyvl demo.
+    lineage:
+      - type: crawl
+        id: lin-metro-field-1
+        timestamp: "2025-10-21T18:00:00+00:00"
+        note: "Synthetic org unit for graph demo."
 
   - id: a1000001-0008-4000-8000-000000000008
     name: Jordan Lee
