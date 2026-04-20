@@ -26,6 +26,7 @@ import CityIntelligenceMap from "./pencil/CityIntelligenceMap";
 import CityNavigationMap from "./pencil/CityNavigationMap";
 import StakeholderAuditDashboard from "./pencil/StakeholderAuditDashboard";
 import ExecutiveHealthMatrix from "./pencil/ExecutiveHealthMatrix";
+import CommandPalette from "./components/CommandPalette";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -54,6 +55,7 @@ export function App() {
   const [pivotResult, setPivotResult] = useState<RedTeamResult | null>(null);
   const [pivotError, setPivotError] = useState<string | null>(null);
   const [captureFlash, setCaptureFlash] = useState<LedgerResponse | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   async function runPivot() {
     if (pivotState === "running") return;
@@ -95,6 +97,19 @@ export function App() {
     void load();
   }, []);
 
+  // Global Cmd+K / Ctrl+K opens the palette from any tab. We also close on
+  // Cmd+K so a double-tap toggles.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     if (!selectedId) {
       setDetail(null);
@@ -132,6 +147,7 @@ export function App() {
         tab={tab}
         setTab={setTab}
         onRefresh={() => void load()}
+        onOpenPalette={() => setPaletteOpen(true)}
         stakeholderCount={stakeholders.length}
         conflictCount={conflicts.length}
         graphSource={graph?.source ?? "offline"}
@@ -255,7 +271,22 @@ export function App() {
               onSelect={setSelectedId}
             />
             <div className="flex-1 overflow-hidden">
-              <StakeholderAuditDashboard stakeholder={detail} conflict={conflictForSelected} />
+              <StakeholderAuditDashboard
+                stakeholder={detail}
+                conflict={conflictForSelected}
+                stakeholders={stakeholders}
+                onUpdated={(updated) => {
+                  // Local update so the audit panel feels instant. A full
+                  // `load()` then backfills the sidebar list, graph, conflicts.
+                  setDetail(updated);
+                  void load();
+                }}
+                onArchived={(archivedId) => {
+                  if (selectedId === archivedId) setSelectedId(null);
+                  setDetail(null);
+                  void load();
+                }}
+              />
             </div>
           </div>
         )}
@@ -282,6 +313,33 @@ export function App() {
           />
         )}
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        stakeholders={stakeholders}
+        conflicts={conflicts}
+        plans={plans}
+        onSelect={(s) => {
+          if (s.kind === "stakeholder") {
+            setSelectedId(s.id);
+            setTab("audit");
+          } else if (s.kind === "conflict") {
+            // Jump to the stakeholder implicated by the conflict, if any, else the overview.
+            const conflict = conflicts.find((c) => c.path === s.path);
+            const meta = conflict?.metadata as Record<string, unknown> | undefined;
+            const sid = typeof meta?.stakeholder === "string" ? meta.stakeholder : null;
+            if (sid) {
+              setSelectedId(sid);
+              setTab("audit");
+            } else {
+              setTab("overview");
+            }
+          } else if (s.kind === "plan") {
+            setTab("overview");
+          }
+        }}
+      />
     </div>
   );
 }
@@ -292,11 +350,15 @@ function TopBar(props: {
   tab: TabId;
   setTab: (t: TabId) => void;
   onRefresh: () => void;
+  onOpenPalette: () => void;
   stakeholderCount: number;
   conflictCount: number;
   graphSource: string;
   loading: boolean;
 }) {
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  const cmdKey = isMac ? "⌘" : "Ctrl";
   return (
     <div
       className="flex items-center gap-6 px-6"
@@ -340,6 +402,30 @@ function TopBar(props: {
         <Stat label="STAKEHOLDERS" value={props.stakeholderCount.toString()} />
         <Stat label="CONFLICTS" value={props.conflictCount.toString()} tone={props.conflictCount > 0 ? "warn" : "ok"} />
         <Stat label="GRAPH" value={props.graphSource.replace(/^proposed:.+$/, "proposed")} />
+        <button
+          onClick={props.onOpenPalette}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md"
+          style={{
+            background: "#1F2A40",
+            border: "1px solid #2A3650",
+            color: "#8892A8",
+          }}
+          title="Search stakeholders, conflicts, plans"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <span className="font-mono text-xs" style={{ letterSpacing: "0.04em" }}>
+            SEARCH
+          </span>
+          <kbd
+            className="font-mono text-[10px] px-1 py-0.5 rounded"
+            style={{ background: "#0E141F", border: "1px solid #2A3650", color: "#5A6580" }}
+          >
+            {cmdKey}K
+          </kbd>
+        </button>
         <button
           onClick={props.onRefresh}
           disabled={props.loading}

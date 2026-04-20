@@ -2,15 +2,52 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import frontmatter
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from . import obsidian_to_neo4j, vault
 from .config import settings
 from .ledger_processor import router as ledger_router
+
+
+EntityType = Literal["Person", "Role", "Agency", "System", "Gatekeeper"]
+
+
+class StakeholderPatch(BaseModel):
+    """Partial update for a stakeholder note. All fields optional — only the
+    ones the client sends get applied. Server-side bounds enforce the 0-1
+    convention so bad client values can't corrupt the YAML."""
+
+    name: Optional[str] = None
+    type: Optional[EntityType] = None
+    role: Optional[str] = None
+    agency: Optional[str] = None
+    influence_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    sentiment_vector: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    technical_blockers: Optional[list[str]] = None
+    ghost: Optional[bool] = None
+
+
+class NotesBody(BaseModel):
+    content: str
+
+
+class MergeBody(BaseModel):
+    target_id: str
+
+
+def _serialize_detail(note: vault.StakeholderNote) -> dict[str, Any]:
+    return {
+        "id": note.id,
+        "name": note.name,
+        "metadata": note.data,
+        "content": note.post.content,
+        "path": str(note.path.relative_to(settings.vault)),
+    }
 
 app = FastAPI(title="Pathfinder Core", version="0.1.0")
 app.add_middleware(
@@ -93,13 +130,75 @@ def get_stakeholder(entity_id: str) -> dict[str, Any]:
     note = vault.find_by_id(entity_id)
     if not note:
         raise HTTPException(status_code=404, detail="stakeholder not found")
+    return _serialize_detail(note)
+
+
+@app.patch("/stakeholders/{entity_id}")
+def patch_stakeholder(entity_id: str, patch: StakeholderPatch) -> dict[str, Any]:
+    """Partial update of a stakeholder's YAML frontmatter.
+
+    Only fields present in the request body are touched. Bounds on influence /
+    sentiment are enforced by the Pydantic model.
+    """
+    note = vault.find_by_id(entity_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="stakeholder not found")
+    # `exclude_none=True` so an absent field means "don't touch" rather than
+    # "set to null" — matches PATCH semantics the UI expects.
+    patch_dict = patch.model_dump(exclude_none=True)
+    if not patch_dict:
+        raise HTTPException(status_code=400, detail="empty patch")
+    vault.patch_note(note, patch_dict)
+    return _serialize_detail(note)
+
+
+@app.put("/stakeholders/{entity_id}/notes")
+def put_stakeholder_notes(entity_id: str, body: NotesBody) -> dict[str, Any]:
+    """Replace the markdown body of a stakeholder note (frontmatter preserved).
+
+    Used by the dashboard's private-notes editor; the body is free-form markdown
+    that doesn't need schema validation.
+    """
+    note = vault.find_by_id(entity_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="stakeholder not found")
+    vault.replace_body(note, body.content)
+    return _serialize_detail(note)
+
+
+@app.delete("/stakeholders/{entity_id}")
+def archive_stakeholder(entity_id: str) -> dict[str, Any]:
+    """Soft-delete a stakeholder by moving its file to vault/archive/."""
+    note = vault.find_by_id(entity_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="stakeholder not found")
+    new_path = vault.archive_note(note)
     return {
-        "id": note.id,
-        "name": note.name,
-        "metadata": note.data,
-        "content": note.post.content,
-        "path": str(note.path.relative_to(settings.vault)),
+        "id": entity_id,
+        "archived_to": str(new_path.relative_to(settings.vault)),
     }
+
+
+@app.post("/stakeholders/{entity_id}/merge")
+def merge_stakeholder(entity_id: str, body: MergeBody) -> dict[str, Any]:
+    """Merge the source (entity_id) into the target (body.target_id).
+
+    Source's blockers + lineage move into target, then source is archived.
+    Returns the (updated) target note so the UI can swap in-place.
+    """
+    if entity_id == body.target_id:
+        raise HTTPException(status_code=400, detail="cannot merge a note into itself")
+    source = vault.find_by_id(entity_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="source stakeholder not found")
+    target = vault.find_by_id(body.target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="target stakeholder not found")
+    try:
+        merged = vault.merge_notes(source, target)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _serialize_detail(merged)
 
 
 @app.get("/conflicts")

@@ -130,8 +130,12 @@ export type RedTeamResult = {
   hotspot_names: string[];
 };
 
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method: "POST" };
+async function sendJson<T>(
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const init: RequestInit = { method };
   if (body !== undefined) {
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
@@ -148,8 +152,31 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
     }
     throw new Error(detail);
   }
-  return (await response.json()) as T;
+  // DELETE sometimes returns JSON, sometimes empty — handle both gracefully.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : null) as T;
 }
+
+const postJson = <T,>(path: string, body?: unknown) => sendJson<T>("POST", path, body);
+const patchJson = <T,>(path: string, body: unknown) => sendJson<T>("PATCH", path, body);
+const putJson = <T,>(path: string, body: unknown) => sendJson<T>("PUT", path, body);
+const deleteJson = <T,>(path: string) => sendJson<T>("DELETE", path);
+
+export type StakeholderPatch = {
+  name?: string;
+  type?: "Person" | "Role" | "Agency" | "System" | "Gatekeeper";
+  role?: string;
+  agency?: string;
+  influence_score?: number;    // 0..1
+  sentiment_vector?: number;   // 0..1
+  technical_blockers?: string[];
+  ghost?: boolean;
+};
+
+export type ArchiveResponse = {
+  id: string;
+  archived_to: string;
+};
 
 export const api = {
   stakeholders: () => getJson<Stakeholder[]>("/stakeholders"),
@@ -163,4 +190,15 @@ export const api = {
     postJson<PreviewResponse>("/ledger/preview", payload),
   commitLedger: (payload: LedgerPayload) =>
     postJson<LedgerResponse>("/ledger", payload),
+  patchStakeholder: (id: string, patch: StakeholderPatch) =>
+    patchJson<StakeholderDetail>(`/stakeholders/${encodeURIComponent(id)}`, patch),
+  putStakeholderNotes: (id: string, content: string) =>
+    putJson<StakeholderDetail>(`/stakeholders/${encodeURIComponent(id)}/notes`, { content }),
+  mergeStakeholder: (sourceId: string, targetId: string) =>
+    postJson<StakeholderDetail>(
+      `/stakeholders/${encodeURIComponent(sourceId)}/merge`,
+      { target_id: targetId },
+    ),
+  archiveStakeholder: (id: string) =>
+    deleteJson<ArchiveResponse>(`/stakeholders/${encodeURIComponent(id)}`),
 };
