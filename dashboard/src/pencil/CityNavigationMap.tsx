@@ -395,7 +395,7 @@ export default function CityNavigationMap({
 
         <div
           className="absolute flex flex-col gap-4 px-3.5 py-2 rounded-md z-10"
-          style={{ left: 24, top: 100, background: '#0A0E17CC', border: '1px solid #2A3650' }}
+          style={{ left: 24, top: live ? 130 : 100, background: '#0A0E17CC', border: '1px solid #2A3650' }}
         >
           {LEGEND.map((l, i) => (
             <div key={i} className="flex items-center gap-1.5">

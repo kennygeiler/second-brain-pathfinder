@@ -412,7 +412,7 @@ export default function CityIntelligenceMap({
 
         <div
           className="absolute flex flex-col gap-4 px-3.5 py-2 rounded-md z-10"
-          style={{ left: 24, top: 100, background: '#0A0E17CC', border: '1px solid #2A3650' }}
+          style={{ left: 24, top: live ? 130 : 100, background: '#0A0E17CC', border: '1px solid #2A3650' }}
         >
           {LEGEND.map(l => (
             <div key={l.label} className="flex items-center gap-1.5">
@@ -421,6 +421,19 @@ export default function CityIntelligenceMap({
             </div>
           ))}
         </div>
+
+        {live && (
+          <div
+            className="absolute z-10 rounded-md px-3 py-2 max-w-[320px]"
+            style={{ left: 24, top: 258, background: '#0A0E17CC', border: '1px solid #2A3650' }}
+          >
+            <div className="font-mono text-[10px]" style={{ color: '#5A6580', letterSpacing: '0.08em' }}>HOW TO READ</div>
+            <div className="mt-1 font-mono text-xs" style={{ color: '#8892A8', lineHeight: 1.55 }}>
+              Node size = influence, border color = sentiment, lines = relationship type.
+              Use ORG for reporting power, PRODUCT for adoption friction, and COMBO to compare both.
+            </div>
+          </div>
+        )}
 
         {live ? (
           <LiveGraph

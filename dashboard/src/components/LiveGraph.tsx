@@ -104,6 +104,47 @@ function filterGraphEdges(
   });
 }
 
+function computeAutoViewTransform(
+  nodes: GraphNode[],
+  positions: Map<string, Pos>,
+  width: number,
+  height: number,
+): { zoom: number; pan: { x: number; y: number } } {
+  if (nodes.length === 0) return { zoom: 1, pan: { x: 0, y: 0 } };
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    const p = positions.get(n.id);
+    if (!p) continue;
+    const r = nodeRadius(n);
+    minX = Math.min(minX, p.x - r);
+    minY = Math.min(minY, p.y - r);
+    maxX = Math.max(maxX, p.x + r);
+    maxY = Math.max(maxY, p.y + r);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return { zoom: 1, pan: { x: 0, y: 0 } };
+
+  const boxW = Math.max(1, maxX - minX);
+  const boxH = Math.max(1, maxY - minY);
+  const margin = 110;
+  const fitX = (width - margin * 2) / boxW;
+  const fitY = (height - margin * 2) / boxH;
+  const zoom = Math.max(0.65, Math.min(1.6, Math.min(fitX, fitY)));
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  return {
+    zoom,
+    pan: {
+      x: width / 2 - zoom * cx,
+      y: height / 2 - zoom * cy,
+    },
+  };
+}
+
 // ─── Deterministic seeded PRNG ───────────────────────────────────────────────
 
 function seedFromString(s: string): number {
@@ -515,6 +556,17 @@ export default function LiveGraph({
     [pinned, positions],
   );
 
+  const fitToGraph = useCallback(() => {
+    const fit = computeAutoViewTransform(graph.nodes, positions, width, height);
+    setZoom(fit.zoom);
+    setPan(fit.pan);
+  }, [graph.nodes, positions, width, height]);
+
+  // Start each view on a readable framing of the current graph.
+  useEffect(() => {
+    fitToGraph();
+  }, [fitToGraph, graphInsightView]);
+
   const neighborhood = useMemo(() => {
     if (!selectedId) return null;
     const set = new Set<string>([selectedId]);
@@ -682,10 +734,9 @@ export default function LiveGraph({
   }, [dragOp, clientDeltaToVb, zoom, onNodeClick]);
 
   const handleReset = useCallback(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
     setPinned(new Map());
-  }, []);
+    fitToGraph();
+  }, [fitToGraph]);
 
   // ─── Empty state ──────────────────────────────────────────────────────────
 
